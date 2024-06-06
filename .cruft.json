@@ -1,0 +1,29 @@
+{
+  "template": "https://github.com/radix-ai/poetry-cookiecutter",
+  "commit": "aa2e59ebb22923291c841a3bd59843d9164c7d5f",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "project_type": "package",
+      "project_name": "dramatiq-kombu-broker",
+      "project_description": "Dramatiq Kombu-based broker",
+      "project_url": "https://github.com/spumer/dramatiq-kombu-broker",
+      "author_name": "spumer <spumer-tm@yandex.ru>",
+      "author_email": "spumer-tm@yandex.ru",
+      "python_version": "3.10",
+      "development_environment": "simple",
+      "with_conventional_commits": "1",
+      "with_fastapi_api": "0",
+      "with_typer_cli": "0",
+      "continuous_integration": "GitHub",
+      "private_package_repository_name": "",
+      "private_package_repository_url": "",
+      "__docker_image": "python:$PYTHON_VERSION-slim",
+      "__docstring_style": "NumPy",
+      "__project_name_kebab_case": "dramatiq-kombu-broker",
+      "__project_name_snake_case": "dramatiq_kombu_broker",
+      "_template": "https://github.com/radix-ai/poetry-cookiecutter"
+    }
+  },
+  "directory": null
+}
