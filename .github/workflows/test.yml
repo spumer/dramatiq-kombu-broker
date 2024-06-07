@@ -18,6 +18,15 @@ jobs:
 
     name: Python ${{ matrix.python-version }}
 
+    services:
+      rabbitmq:
+        image: rabbitmq:3.12
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        ports:
+          - 5672
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,6 +49,8 @@ jobs:
 
       - name: Test package
         run: devcontainer exec --workspace-folder . poe test
+        env:
+          PYTEST_RABBITMQ_HOST: 'rabbitmq'
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

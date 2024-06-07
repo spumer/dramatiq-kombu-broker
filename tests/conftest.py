@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 pytest_plugins = [
@@ -16,5 +18,13 @@ def rabbitmq_password():
 
 
 @pytest.fixture()
-def rabbitmq_dsn(rabbitmq_username, rabbitmq_password):
-    return f"amqp://{rabbitmq_username}:{rabbitmq_password}@127.0.0.1:5672/"
+def rabbitmq_hostname():
+    if hostname := os.getenv("PYTEST_RABBITMQ_HOST"):
+        return hostname
+
+    return '127.0.0.1'
+
+
+@pytest.fixture()
+def rabbitmq_dsn(rabbitmq_username, rabbitmq_password, rabbitmq_hostname):
+    return f"amqp://{rabbitmq_username}:{rabbitmq_password}@{rabbitmq_hostname}:5672/"
