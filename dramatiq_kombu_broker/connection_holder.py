@@ -77,7 +77,6 @@ class ConnectionHolder(abc.ABC):
             slept_interval,
             exc,
             exc_info=True,
-            stack_info=True,
         )
 
     @abc.abstractmethod

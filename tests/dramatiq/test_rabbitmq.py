@@ -16,10 +16,6 @@ from unittest.mock import patch
 import amqp.exceptions
 import kombu
 import pytest
-
-import dramatiq
-from dramatiq import Message, Middleware, QueueJoinTimeout, Worker
-from dramatiq.common import current_millis
 from dramatiq_kombu_broker import ConnectionPooledKombuBroker, ConnectionSharedKombuBroker
 from dramatiq_kombu_broker.testing import (
     ensure_consumer_connection_rabbitmq,
@@ -27,6 +23,10 @@ from dramatiq_kombu_broker.testing import (
     get_consumer_connections,
     get_producer_connections,
 )
+
+import dramatiq
+from dramatiq import Message, Middleware, QueueJoinTimeout, Worker
+from dramatiq.common import current_millis
 
 
 def assert_producer_connections_one(broker) -> kombu.Connection:

@@ -31,26 +31,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
         with:
-          node-version: 21
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install @devcontainers/cli
-        run: npm install --location=global @devcontainers/cli@0.58.0
-
-      - name: Start Dev Container
+      - name: Install dependencies
         run: |
-          git config --global init.defaultBranch main
-          PYTHON_VERSION=${{ matrix.python-version }} devcontainer up --workspace-folder .
+          python -m pip install --upgrade pip poetry
+          poetry config virtualenvs.create false
+          poetry install --no-root
 
       - name: Lint package
-        run: devcontainer exec --workspace-folder . poe lint
+        run: poe lint
 
       - name: Test package
-        run: devcontainer exec --workspace-folder . poe test
+        run: poe test
         env:
-          PYTEST_RABBITMQ_HOST: 'rabbitmq'
+          PYTEST_RABBITMQ_HOST: 127.0.0.1
+          PYTEST_RABBITMQ_PORT: ${{ job.services.rabbitmq.ports['5672'] }}
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

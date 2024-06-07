@@ -26,5 +26,13 @@ def rabbitmq_hostname():
 
 
 @pytest.fixture()
-def rabbitmq_dsn(rabbitmq_username, rabbitmq_password, rabbitmq_hostname):
-    return f"amqp://{rabbitmq_username}:{rabbitmq_password}@{rabbitmq_hostname}:5672/"
+def rabbitmq_port():
+    if port := os.getenv("PYTEST_RABBITMQ_PORT"):
+        return int(port)
+
+    return 5672
+
+
+@pytest.fixture()
+def rabbitmq_dsn(rabbitmq_username, rabbitmq_password, rabbitmq_hostname, rabbitmq_port):
+    return f"amqp://{rabbitmq_username}:{rabbitmq_password}@{rabbitmq_hostname}:{rabbitmq_port}/"

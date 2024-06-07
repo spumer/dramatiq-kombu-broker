@@ -48,7 +48,7 @@ skip_covered = true
 branch = true
 command_line = "--module pytest"
 data_file = "reports/.coverage"
-source = ["src"]
+source = ["dramatiq_kombu_broker"]
 
 [tool.coverage.xml]  # https://coverage.readthedocs.io/en/latest/config.html#xml
 output = "reports/coverage.xml"
@@ -65,7 +65,7 @@ warn_unreachable = true
 
 [tool.pytest.ini_options]  # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
 addopts = "-s -vv --color=yes --doctest-modules --exitfirst --failed-first"
-testpaths = ["src", "tests"]
+testpaths = ["dramatiq_kombu_broker", "tests"]
 xfail_strict = true
 log_cli = true
 log_cli_level = 'INFO'
@@ -75,7 +75,7 @@ log_cli_format = '%(asctime)s [%(levelname)-7s] [%(threadName)s] %(name)s: %(mes
 [tool.ruff]  # https://github.com/charliermarsh/ruff
 fix = true
 line-length = 100
-src = ["src", "tests"]
+src = ["dramatiq_kombu_broker", "tests"]
 target-version = "py39"
 
 [tool.ruff.lint]

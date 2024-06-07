@@ -253,7 +253,6 @@ class KombuBroker(Broker):
             slept_interval,
             exc,
             exc_info=True,
-            stack_info=True,
         )
 
     @classmethod
