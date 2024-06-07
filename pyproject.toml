@@ -17,9 +17,10 @@ update_changelog_on_bump = true
 version_provider = "poetry"
 
 [tool.poetry.dependencies]  # https://python-poetry.org/docs/dependency-specification/
-python = ">=3.10,<4.0"
+python = ">=3.9,<4.0"
 kombu-pyamqp-threadsafe = ">=0.3.0"
 dramatiq = "^1.17.0"
+typing-extensions = { version= "^4.12.1", python = "<3.10"}
 
 [tool.poetry.group.test.dependencies]  # https://python-poetry.org/docs/master/managing-dependencies/
 commitizen = ">=3.21.3"
@@ -54,6 +55,7 @@ output = "reports/coverage.xml"
 
 [tool.mypy]  # https://mypy.readthedocs.io/en/latest/config_file.html
 junit_xml = "reports/mypy.xml"
+python_version = "3.9"
 ignore_missing_imports = true
 pretty = true
 show_column_numbers = true
@@ -74,7 +76,7 @@ log_cli_format = '%(asctime)s [%(levelname)-7s] [%(threadName)s] %(name)s: %(mes
 fix = true
 line-length = 100
 src = ["src", "tests"]
-target-version = "py310"
+target-version = "py39"
 
 [tool.ruff.lint]
 ignore-init-module-imports = true

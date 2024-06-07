@@ -1,5 +1,6 @@
 import logging
 import threading
+import typing as tp
 
 import kombu
 import kombu.pools
@@ -47,9 +48,9 @@ class PooledConnectionHolder(ConnectionHolder):
         self,
         connection: kombu.Connection,
         *,
-        consumer_pool_size: int | None = 100,
-        producer_pool_size: int | None = 10,
-        connect_max_retries: int | None = None,
+        consumer_pool_size: tp.Optional[int] = 100,
+        producer_pool_size: tp.Optional[int] = 10,
+        connect_max_retries: tp.Optional[int] = None,
     ):
         """
         :param connection: connection info
@@ -90,7 +91,7 @@ class PooledConnectionHolder(ConnectionHolder):
         conn = self._acquire_consumer_connection(ensure=True, block=block, timeout=timeout)
         return AutoConnectionReleaseChannel(conn)
 
-    def acquire_producer(self, block=True, timeout: float | None = None):
+    def acquire_producer(self, block=True, timeout: tp.Optional[float] = None):
         """Return Producer ready to produce messages.
 
         You MUST call .release() manually, or use context-manager

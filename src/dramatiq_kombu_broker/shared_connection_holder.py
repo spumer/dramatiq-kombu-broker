@@ -1,8 +1,8 @@
 import logging
 import threading
+import typing as tp
 
 import kombu.exceptions
-
 from kombu_pyamqp_threadsafe import KombuConnection as SharedKombuConnection
 from kombu_pyamqp_threadsafe import ThreadSafeChannel
 
@@ -69,7 +69,7 @@ class SharedConnectionHolder(ConnectionHolder):
 
         return conn
 
-    def acquire_producer(self, block: bool = True, timeout: float | None = None):
+    def acquire_producer(self, block: bool = True, timeout: tp.Optional[float] = None):
         """Return kombu.Producer bind to produce connection
 
         You MUST call `.release()` manually or use context-manager
@@ -87,7 +87,9 @@ class SharedConnectionHolder(ConnectionHolder):
             return AutoChannelReleaseProducer(channel)
 
     def acquire_consumer_channel(
-        self, block: bool = False, timeout: float | None = None
+        self,
+        block: bool = False,
+        timeout: tp.Optional[float] = None,
     ) -> ThreadSafeChannel:
         """Return Channel bind to consume connection
 

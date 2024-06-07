@@ -22,7 +22,7 @@ def rabbitmq_hostname():
     if hostname := os.getenv("PYTEST_RABBITMQ_HOST"):
         return hostname
 
-    return '127.0.0.1'
+    return "127.0.0.1"
 
 
 @pytest.fixture()

@@ -1,6 +1,7 @@
 import dataclasses
 import datetime as dt
 import logging
+import typing as tp
 
 import amqp.exceptions
 import kombu
@@ -17,8 +18,8 @@ class DefaultDramatiqTopology:
     dlx_exchange_name: str = ""
     durable: bool = True
     auto_delete: bool = False
-    max_priority: int | None = None
-    dead_letter_message_ttl: dt.timedelta | None = None
+    max_priority: tp.Optional[int] = None
+    dead_letter_message_ttl: tp.Optional[dt.timedelta] = None
 
     def get_canonical_queue_name(self, queue_name):
         """Returns the canonical queue name for a given queue."""

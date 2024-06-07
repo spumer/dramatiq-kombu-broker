@@ -3,19 +3,19 @@ import contextlib
 import datetime as dt
 import functools
 import threading
+import typing as tp
 
 import kombu
 import kombu.simple
 import kombu.transport.pyamqp
 from amqp import RecoverableConnectionError
 from kombu.transport.virtual import Channel
+from kombu.utils.debug import Logwrapped
+from kombu_pyamqp_threadsafe import ThreadSafeChannel
 
 import dramatiq
 from dramatiq import Consumer as BaseConsumer
 from dramatiq import get_logger
-from kombu.utils.debug import Logwrapped
-
-from kombu_pyamqp_threadsafe import ThreadSafeChannel
 
 from ._types import ReleasableChannel
 
@@ -23,7 +23,13 @@ from ._types import ReleasableChannel
 class QueueReader(kombu.simple.SimpleBase):
     """Простой способ прочитать все сообщения из очереди"""
 
-    def __init__(self, channel: Channel, *, queue_name: str, prefetch_count: int | None = None):
+    def __init__(
+        self,
+        channel: Channel,
+        *,
+        queue_name: str,
+        prefetch_count: tp.Optional[int] = None,
+    ):
         queue = kombu.Queue(queue_name, channel=channel, no_declare=True)
         consumer = kombu.Consumer(channel, queue, prefetch_count=prefetch_count)
         producer = kombu.Producer(channel, routing_key=queue_name)
@@ -54,7 +60,7 @@ class QueueReader(kombu.simple.SimpleBase):
             self._consuming = False
             self.consumer.cancel()
 
-    def pop(self, timeout: float = 0) -> kombu.Message | None:
+    def pop(self, timeout: float = 0) -> tp.Optional[kombu.Message]:
         """Убрать сообщение из буфера"""
         try:
             return self.get(timeout=timeout)
@@ -73,7 +79,7 @@ class QueueReader(kombu.simple.SimpleBase):
 
 
 class MessageProxy(dramatiq.MessageProxy):
-    last_acknowledge_error: Exception | None
+    last_acknowledge_error: tp.Optional[Exception]
 
     def __init__(self, dramatiq_message: dramatiq.Message, *, kombu_message: kombu.Message):
         super().__init__(dramatiq_message)
@@ -180,8 +186,8 @@ class DramatiqConsumer(BaseConsumer):
         self,
         message: MessageProxy,  # type: ignore[valid-type]
         *,
-        block: bool | None = None,
-        timeout: float | None = None,
+        block: tp.Optional[bool] = None,
+        timeout: tp.Optional[float] = None,
     ):
         if block is None:
             block = self.blocking_acknowledge
@@ -207,8 +213,8 @@ class DramatiqConsumer(BaseConsumer):
         self,
         message: MessageProxy,  # type: ignore[valid-type]
         *,
-        block: bool | None = None,
-        timeout: float | None = None,
+        block: tp.Optional[bool] = None,
+        timeout: tp.Optional[float] = None,
     ):
         if block is None:
             block = self.blocking_acknowledge
@@ -252,13 +258,13 @@ class DramatiqConsumer(BaseConsumer):
             if done_event is not None:
                 done_event.set()
 
-    def __next__(self) -> MessageProxy | None:  # type: ignore[valid-type]
+    def __next__(self) -> tp.Optional[MessageProxy]:  # type: ignore[valid-type]
         """Consume message from RMQ and return it"""
         try:
             self._process_queued_ack_events()
             self._process_queued_nack_events()
 
-            message: kombu.Message | None = self._reader.pop(
+            message: tp.Optional[kombu.Message] = self._reader.pop(
                 timeout=self.read_timeout.total_seconds()
             )
             if message is None:

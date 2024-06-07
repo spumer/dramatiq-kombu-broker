@@ -1,14 +1,13 @@
-import typing
+import typing as tp
 
 import kombu
-
 from kombu_pyamqp_threadsafe import ThreadSafeChannel
 
 from .pooled_connection_holder import AutoConnectionReleaseChannel
 
 
-class _ReleasableChannelProto(typing.Protocol):
-    connection: kombu.Connection | None
+class _ReleasableChannelProto(tp.Protocol):
+    connection: tp.Optional[kombu.Connection]
     channel_id: int
 
     def release(self) -> None: ...
@@ -28,4 +27,6 @@ class _ReleasableChannelProto(typing.Protocol):
     def __exit__(self, exc_type, exc_val, exc_tb): ...
 
 
-ReleasableChannel = ThreadSafeChannel | AutoConnectionReleaseChannel | _ReleasableChannelProto
+ReleasableChannel = tp.Union[
+    ThreadSafeChannel, AutoConnectionReleaseChannel, _ReleasableChannelProto
+]
