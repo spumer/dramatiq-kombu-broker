@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]  # https://python-poetry.org/docs/pyproject/
 name = "dramatiq-kombu-broker"
-version = "0.0.0"
+version = "0.1.0"
 description = "Dramatiq Kombu-based broker"
 authors = ["spumer <spumer-tm@yandex.ru> <spumer-tm@yandex.ru>"]
 readme = "README.md"
