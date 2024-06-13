@@ -12,7 +12,9 @@ import dramatiq.common
 
 module_logger = logging.getLogger(__name__)
 
-dramatiq_rabbitmq_dlq_ttl = dt.timedelta(milliseconds=int(os.getenv("dramatiq_dead_message_ttl", 86400000 * 7)))
+dramatiq_rabbitmq_dlq_ttl = dt.timedelta(
+    milliseconds=int(os.getenv("dramatiq_dead_message_ttl", 86400000 * 7))
+)
 
 
 @dataclasses.dataclass
