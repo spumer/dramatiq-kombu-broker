@@ -1,6 +1,7 @@
 import dataclasses
 import datetime as dt
 import logging
+import os
 import typing as tp
 
 import amqp.exceptions
@@ -11,6 +12,8 @@ import dramatiq.common
 
 module_logger = logging.getLogger(__name__)
 
+dramatiq_rabbitmq_dlq_ttl = dt.timedelta(milliseconds=int(os.getenv("dramatiq_dead_message_ttl", 86400000 * 7)))
+
 
 @dataclasses.dataclass
 class DefaultDramatiqTopology:
@@ -19,7 +22,8 @@ class DefaultDramatiqTopology:
     durable: bool = True
     auto_delete: bool = False
     max_priority: tp.Optional[int] = None
-    dead_letter_message_ttl: tp.Optional[dt.timedelta] = None
+    #: None - disable, timedelta - set given TTL as `x-message-ttl` argument
+    dead_letter_message_ttl: tp.Optional[dt.timedelta] = dramatiq_rabbitmq_dlq_ttl
 
     def get_canonical_queue_name(self, queue_name):
         """Returns the canonical queue name for a given queue."""
