@@ -70,7 +70,7 @@ class DefaultDramatiqTopology:
 
         # The value of the TTL argument or policy must be a non-negative integer (equal to or greater than zero),
         # describing the TTL period in milliseconds.
-        ttl = self.dead_letter_message_ttl.total_seconds() * 1000
+        ttl = int(self.dead_letter_message_ttl.total_seconds() * 1000)
         return {
             "x-message-ttl": ttl,
         }
