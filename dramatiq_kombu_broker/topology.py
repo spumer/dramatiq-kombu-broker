@@ -100,8 +100,13 @@ class DefaultDramatiqTopology:
                 raise
 
             errmsg = str(exc)
+            is_inequivalent_args = "inequivalent arg" in errmsg.lower()
+            if not is_inequivalent_args:
+                raise
+
             self.logger.info(
-                "Queue %r exists with different topology (Precondition failed: %s). Skip declaring.",
+                "Queue %r can not be declared with given topology (Precondition failed: %s)."
+                " Skip declaring (ignore_different_topology=True)",
                 queue_name,
                 errmsg,
             )
