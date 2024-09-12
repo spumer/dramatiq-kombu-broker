@@ -1,5 +1,6 @@
 import dataclasses
 import datetime as dt
+import functools
 import logging
 import os
 import typing as tp
@@ -17,6 +18,12 @@ dramatiq_rabbitmq_dlq_ttl = dt.timedelta(
 )
 
 
+class QueueName(tp.NamedTuple):
+    canonical: str
+    delayed: str
+    dead_letter: str
+
+
 @dataclasses.dataclass
 class DefaultDramatiqTopology:
     logger: logging.Logger = module_logger.getChild("Topology")
@@ -27,18 +34,35 @@ class DefaultDramatiqTopology:
     #: None - disable, timedelta - set given TTL as `x-message-ttl` argument
     dead_letter_message_ttl: tp.Optional[dt.timedelta] = dramatiq_rabbitmq_dlq_ttl
 
-    def get_canonical_queue_name(self, queue_name):
+    @classmethod
+    @functools.lru_cache
+    def get_queue_name_tuple(cls, queue_name: str) -> QueueName:
+        """Fast shortcut to get all queue name varaiants
+
+        :param queue_name:
+        :return: named tuple with names, (canonical, delayed, dead_letter)
+        Names can be accessed via attribute
+        """
+        canonical_name = cls.get_canonical_queue_name(queue_name)
+        delay_name = cls.get_delay_queue_name(queue_name)
+        dlq_name = cls.get_dead_letter_queue_name(queue_name)
+        return QueueName(canonical_name, delay_name, dlq_name)
+
+    @classmethod
+    def get_canonical_queue_name(cls, queue_name):
         """Returns the canonical queue name for a given queue."""
         return dramatiq.common.q_name(queue_name)
 
-    def get_dead_letter_queue_name(self, queue_name):
+    @classmethod
+    def get_dead_letter_queue_name(cls, queue_name):
         """Returns the dead letter queue name for a given queue.  If the
         given queue name belongs to a delayed queue, the dead letter queue
         name for the original queue is generated.
         """
         return dramatiq.common.xq_name(queue_name)
 
-    def get_delay_queue_name(self, queue_name):
+    @classmethod
+    def get_delay_queue_name(cls, queue_name):
         """Returns the delayed queue name for a given queue.  If the given
         queue name already belongs to a delayed queue, then it is returned
         unchanged.

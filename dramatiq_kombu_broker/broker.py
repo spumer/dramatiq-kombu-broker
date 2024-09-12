@@ -14,7 +14,7 @@ import kombu.transport.pyamqp
 
 import dramatiq
 from dramatiq import Broker
-from dramatiq.common import current_millis, dq_name, q_name, xq_name
+from dramatiq.common import current_millis
 
 from .connection_holder import ConnectionHolder
 from .consumer import DramatiqConsumer, ThreadSafeDramatiqConsumer
@@ -111,7 +111,7 @@ class KombuBroker(Broker):
 
         self.topology = DefaultDramatiqTopology(max_priority=max_priority)
         self.queues_pending: set[str] = set()
-        self.queues: set[str] = set()
+        self.queues: set[str] = set()  # should contain only canonical names
 
     def _create_connection_holder(
         self, connection: kombu.Connection, options: dict[str, tp.Any]
@@ -143,8 +143,8 @@ class KombuBroker(Broker):
           tuple: A triple representing the number of messages in the
           queue, its delayed queue and its dead letter queue.
         """
-        delay_queue_name = dq_name(queue_name)
-        dead_letter_queue_name = xq_name(queue_name)
+        delay_queue_name = self.topology.get_delay_queue_name(queue_name)
+        dead_letter_queue_name = self.topology.get_dead_letter_queue_name(queue_name)
 
         counts = []
 
@@ -194,21 +194,23 @@ class KombuBroker(Broker):
                 time.sleep(idle_time / 1000)
 
     def declare_queue(self, queue_name, *, ensure=False):
-        if q_name(queue_name) not in self.queues:
+        canonical_qname = self.topology.get_canonical_queue_name(queue_name)
+
+        if canonical_qname not in self.queues:
             with self._declare_lock:
-                if q_name(queue_name) not in self.queues:
+                if canonical_qname not in self.queues:
                     self.emit_before("declare_queue", queue_name)
-                    self.queues.add(queue_name)
-                    self.queues_pending.add(queue_name)
+                    self.queues.add(canonical_qname)
+                    self.queues_pending.add(canonical_qname)
                     self.emit_after("declare_queue", queue_name)
 
-                    delayed_name = dq_name(queue_name)
+                    delayed_name = self.topology.get_delay_queue_name(queue_name)
                     self.delay_queues.add(delayed_name)
                     self.emit_after("declare_delay_queue", delayed_name)
 
         if ensure:
             with self._declare_lock:
-                self._ensure_queue(queue_name)
+                self._ensure_queue(canonical_qname)
 
     def _declare_queue(self, queue_name) -> kombu.Queue:
         queue_name = self.topology.get_canonical_queue_name(queue_name)
@@ -280,18 +282,24 @@ class KombuBroker(Broker):
                 # support dramatiq RabbitMQ broker behaviour
                 raise dramatiq.errors.ConnectionClosed(exc.__cause__) from None
 
-        if queue_name in self.queues_pending:
-            _ensure(self._declare_xq_queue, queue_name)
-            _ensure(self._declare_dq_queue, queue_name)
-            _ensure(self._declare_queue, queue_name)
-            self.queues_pending.discard(queue_name)
+        q_names = self.topology.get_queue_name_tuple(queue_name)
+        if queue_name != q_names.canonical:
+            raise RuntimeError("You can ensure only canonical queue name. Given: %r" % queue_name)
+
+        if q_names.canonical in self.queues_pending:
+            self.queues_pending.add(q_names.canonical)
+            self.queues_pending.add(q_names.delayed)
+            self.queues_pending.add(q_names.dead_letter)
+            _ensure(self._declare_xq_queue, q_names.canonical)
+            _ensure(self._declare_dq_queue, q_names.canonical)
+            _ensure(self._declare_queue, q_names.canonical)
 
     def enqueue(self, message, *, delay=None):  # pragma: no cover
         queue_name = message.queue_name
         self.declare_queue(queue_name, ensure=True)
 
         if delay is not None:
-            queue_name = dq_name(queue_name)
+            queue_name = self.topology.get_delay_queue_name(queue_name)
             message_eta = current_millis() + delay
             message = message.copy(
                 queue_name=queue_name,
@@ -336,8 +344,10 @@ class KombuBroker(Broker):
         ----------
           queue_name(str): The queue to flush.
         """
+        q_names = self.topology.get_queue_name_tuple(queue_name)
+
         with contextlib.closing(self.connection_holder.acquire_consumer_channel()) as channel:
-            for name in (queue_name, dq_name(queue_name), xq_name(queue_name)):
+            for name in (q_names.canonical, q_names.delayed, q_names.dead_letter):
                 if queue_name not in self.queues_pending:
                     channel.queue_purge(name)
 
@@ -347,15 +357,20 @@ class KombuBroker(Broker):
             self.flush(queue_name)
 
     def delete_queue(self, queue_name, if_unused: bool = False, if_empty: bool = False):
-        for name in (queue_name, dq_name(queue_name), xq_name(queue_name)):
-            with (
-                contextlib.suppress(amqp.exceptions.NotAllowed),
-                contextlib.closing(self.connection_holder.acquire_consumer_channel()) as channel,
-            ):
-                channel.queue_delete(name, if_unused=if_unused, if_empty=if_empty)
+        q_names = self.topology.get_queue_name_tuple(queue_name)
 
-        self.queues.discard(queue_name)
-        self.queues_pending.add(queue_name)
+        with self._declare_lock:
+            for name in (q_names.canonical, q_names.delayed, q_names.dead_letter):
+                with (
+                    contextlib.suppress(amqp.exceptions.NotAllowed),
+                    contextlib.closing(
+                        self.connection_holder.acquire_consumer_channel()
+                    ) as channel,
+                ):
+                    channel.queue_delete(name, if_unused=if_unused, if_empty=if_empty)
+
+            self.queues.discard(queue_name)
+            self.queues_pending.add(queue_name)
 
     def delete_all(self, include_pending: bool = False):
         queues = self.queues.copy()
@@ -380,10 +395,12 @@ class KombuBroker(Broker):
             consumer.check()
         except amqp.exceptions.NotFound:
             self.logger.info("Queue %s does not exists, ensure declaring", queue_name)
-            self.queues.discard(queue_name)
-            self.declare_queue(queue_name, ensure=True)
+            with self._declare_lock:
+                self.queues.discard(queue_name)
+                self.declare_queue(queue_name, ensure=True)
         else:
-            self.queues_pending.discard(queue_name)
+            with self._declare_lock:
+                self.queues_pending.discard(queue_name)
 
         return consumer
 
