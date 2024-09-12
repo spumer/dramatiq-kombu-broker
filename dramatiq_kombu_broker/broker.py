@@ -310,8 +310,15 @@ class KombuBroker(Broker):
 
         self.logger.debug("Enqueueing message %r on queue %r.", message.message_id, queue_name)
         self.emit_before("enqueue", message, delay)
+
+        self._enqueue_message(queue_name, message)
+
+        self.emit_after("enqueue", message, delay)
+        return message
+
+    def _enqueue_message(self, queue_name, message):
         with self.connection_holder.acquire_producer(block=True) as producer:
-            producer.publish(
+            return producer.publish(
                 exchange="",
                 routing_key=queue_name,
                 body=message.encode(),
@@ -323,9 +330,6 @@ class KombuBroker(Broker):
                     "errback": self.on_connection_error_errback,
                 },
             )
-
-        self.emit_after("enqueue", message, delay)
-        return message
 
     def get_declared_queues(self):
         """Get all declared queues.
