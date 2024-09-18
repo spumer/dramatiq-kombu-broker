@@ -287,11 +287,16 @@ class KombuBroker(Broker):
             raise RuntimeError("You can ensure only canonical queue name. Given: %r" % queue_name)
 
         if q_names.canonical in self.queues_pending:
-            self.queues_pending.add(q_names.canonical)
             self.queues_pending.add(q_names.delayed)
             self.queues_pending.add(q_names.dead_letter)
-            _ensure(self._declare_xq_queue, q_names.canonical)
+
+        if q_names.delayed in self.queues_pending:
             _ensure(self._declare_dq_queue, q_names.canonical)
+
+        if q_names.dead_letter in self.queues_pending:
+            _ensure(self._declare_xq_queue, q_names.canonical)
+
+        if q_names.canonical in self.queues_pending:
             _ensure(self._declare_queue, q_names.canonical)
 
     def enqueue(self, message, *, delay=None):  # pragma: no cover

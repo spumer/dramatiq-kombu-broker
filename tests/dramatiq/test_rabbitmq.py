@@ -105,7 +105,10 @@ def test_rabbitmq__retries_middleware__actors_retry_with_backoff_on_failure(
     succeeded.wait(timeout=30)
 
     # I expect backoff time to have passed between success and failure
-    assert min_backoff <= (success_time - failure_time) <= max_backoff
+
+    # https://github.com/Bogdanp/dramatiq/issues/651
+    # assert min_backoff <= (success_time - failure_time) <= max_backoff
+    assert (success_time - failure_time) <= max_backoff
 
 
 def test_rabbitmq__retries_middleware__actors_can_retry_multiple_times(kombu_broker, kombu_worker):
