@@ -214,7 +214,7 @@ class KombuBroker(Broker):
 
     def _declare_queue(self, queue_name) -> kombu.Queue:
         queue_name = self.topology.get_canonical_queue_name(queue_name)
-        with contextlib.closing(self.connection_holder.acquire_consumer_channel()) as channel:
+        with self.connection_holder.acquire_consumer_channel() as channel:
             queue = self.topology.declare_canonical_queue(
                 channel, queue_name, ignore_different_topology=True
             )
@@ -226,7 +226,7 @@ class KombuBroker(Broker):
     def _declare_dq_queue(self, queue_name):
         """Delay queue"""
         queue_name = self.topology.get_delay_queue_name(queue_name)
-        with contextlib.closing(self.connection_holder.acquire_consumer_channel()) as channel:
+        with self.connection_holder.acquire_consumer_channel() as channel:
             queue = self.topology.declare_delay_queue(
                 channel, queue_name, ignore_different_topology=True
             )
@@ -239,7 +239,7 @@ class KombuBroker(Broker):
         """DLX queue"""
         queue_name = self.topology.get_dead_letter_queue_name(queue_name)
 
-        with contextlib.closing(self.connection_holder.acquire_consumer_channel()) as channel:
+        with self.connection_holder.acquire_consumer_channel() as channel:
             queue = self.topology.declare_dead_letter_queue(
                 channel, queue_name, ignore_different_topology=True
             )
@@ -350,7 +350,7 @@ class KombuBroker(Broker):
         """
         q_names = self.topology.get_queue_name_tuple(queue_name)
 
-        with contextlib.closing(self.connection_holder.acquire_consumer_channel()) as channel:
+        with self.connection_holder.acquire_consumer_channel() as channel:
             for name in (q_names.canonical, q_names.delayed, q_names.dead_letter):
                 if queue_name not in self.queues_pending:
                     channel.queue_purge(name)
@@ -367,9 +367,7 @@ class KombuBroker(Broker):
             for name in (q_names.canonical, q_names.delayed, q_names.dead_letter):
                 with (
                     contextlib.suppress(amqp.exceptions.NotAllowed),
-                    contextlib.closing(
-                        self.connection_holder.acquire_consumer_channel()
-                    ) as channel,
+                    self.connection_holder.acquire_consumer_channel() as channel,
                 ):
                     channel.queue_delete(name, if_unused=if_unused, if_empty=if_empty)
 
