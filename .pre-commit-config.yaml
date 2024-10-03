@@ -38,8 +38,6 @@ repos:
         types: [python]
       - id: fix-byte-order-marker
       - id: mixed-line-ending
-      - id: name-tests-test
-        args: [--pytest-test-first]
       - id: trailing-whitespace
         types: [python]
   - repo: local

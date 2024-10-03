@@ -5,17 +5,16 @@ import functools
 import threading
 import typing as tp
 
+import dramatiq
 import kombu
 import kombu.simple
 import kombu.transport.pyamqp
 from amqp import RecoverableConnectionError
+from dramatiq import Consumer as BaseConsumer
+from dramatiq import get_logger
 from kombu.transport.virtual import Channel
 from kombu.utils.debug import Logwrapped
 from kombu_pyamqp_threadsafe import ThreadSafeChannel
-
-import dramatiq
-from dramatiq import Consumer as BaseConsumer
-from dramatiq import get_logger
 
 from ._types import ReleasableChannel
 

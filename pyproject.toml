@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]  # https://python-poetry.org/docs/pyproject/
 name = "dramatiq-kombu-broker"
-version = "0.1.1"
+version = "0.2.0"
 description = "Dramatiq Kombu-based broker"
 authors = ["spumer <spumer-tm@yandex.ru> <spumer-tm@yandex.ru>"]
 readme = "README.md"
@@ -18,7 +18,7 @@ version_provider = "poetry"
 
 [tool.poetry.dependencies]  # https://python-poetry.org/docs/dependency-specification/
 python = ">=3.9,<4.0"
-kombu-pyamqp-threadsafe = ">=0.3.0"
+kombu-pyamqp-threadsafe = ">=0.4.1"
 dramatiq = "^1.17.0"
 typing-extensions = { version= "^4.12.1", python = "<3.10"}
 

@@ -4,6 +4,7 @@ import pytest
 
 pytest_plugins = [
     "dramatiq_kombu_broker.testing",
+    "tests.conftest_kombu_broker",
 ]
 
 
