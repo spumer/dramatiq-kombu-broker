@@ -7,12 +7,11 @@ import time
 import typing as tp
 
 import amqp
+import dramatiq
 import kombu
 import kombu.exceptions
 import kombu.simple
 import kombu.transport.pyamqp
-
-import dramatiq
 from dramatiq import Broker
 from dramatiq.common import current_millis
 
@@ -79,6 +78,7 @@ class KombuBroker(Broker):
         max_priority: tp.Optional[int] = None,
         max_enqueue_attempts: tp.Optional[int] = None,
         max_declare_attempts: tp.Optional[int] = None,
+        max_producer_acquire_timeout: tp.Optional[float] = 10,
     ):
         super().__init__(
             middleware=middleware,
@@ -105,6 +105,7 @@ class KombuBroker(Broker):
         self._declare_lock = threading.RLock()
         self._max_declare_attempts = max_declare_attempts
         self._max_enqueue_attempts = max_enqueue_attempts
+        self._max_producer_acquire_timeout = max_producer_acquire_timeout
 
         self._default_queue_name = default_queue_name
         self._blocking_acknowledge = blocking_acknowledge
@@ -316,13 +317,26 @@ class KombuBroker(Broker):
         self.logger.debug("Enqueueing message %r on queue %r.", message.message_id, queue_name)
         self.emit_before("enqueue", message, delay)
 
-        self._enqueue_message(queue_name, message)
+        try:
+            self._enqueue_message(queue_name, message)
+        except amqp.exceptions.ChannelError as exc:
+            if exc.reply_code != 312:  # 312 - no-route
+                raise
+
+            with self._declare_lock:
+                self.queues.discard(self.topology.get_canonical_queue_name(queue_name))
+                self.declare_queue(queue_name, ensure=True)
+
+            self._enqueue_message(queue_name, message)
 
         self.emit_after("enqueue", message, delay)
         return message
 
     def _enqueue_message(self, queue_name, message):
-        with self.connection_holder.acquire_producer(block=True) as producer:
+        with self.connection_holder.acquire_producer(
+            block=True,
+            timeout=self._max_producer_acquire_timeout,
+        ) as producer:
             return producer.publish(
                 exchange="",
                 routing_key=queue_name,
@@ -334,6 +348,8 @@ class KombuBroker(Broker):
                     "max_retries": self._max_enqueue_attempts,
                     "errback": self.on_connection_error_errback,
                 },
+                # will raise amqp.exceptions.ChannelError(312, ...) when route not found (e.g.: queue not exists)
+                mandatory=True,
             )
 
     def get_declared_queues(self):
