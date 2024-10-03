@@ -4,10 +4,9 @@ import functools
 import logging
 import typing as tp
 
+import dramatiq
 import kombu
 from kombu.utils.functional import retry_over_time
-
-import dramatiq
 
 if tp.TYPE_CHECKING:
     # circular import possible

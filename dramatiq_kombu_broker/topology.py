@@ -6,10 +6,9 @@ import os
 import typing as tp
 
 import amqp.exceptions
+import dramatiq.common
 import kombu
 from kombu.transport.virtual import Channel
-
-import dramatiq.common
 
 module_logger = logging.getLogger(__name__)
 

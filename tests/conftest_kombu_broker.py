@@ -1,11 +1,10 @@
+import dramatiq
 import pytest
+from dramatiq import Worker
 from dramatiq_kombu_broker import ConnectionPooledKombuBroker, ConnectionSharedKombuBroker
 from dramatiq_kombu_broker.testing import (
     ensure_consumer_connection_rabbitmq,
 )
-
-import dramatiq
-from dramatiq import Worker
 
 
 @pytest.fixture(params=[None])
