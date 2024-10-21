@@ -951,13 +951,13 @@ zookeeper = ["kazoo (>=2.8.0)"]
 
 [[package]]
 name = "kombu-pyamqp-threadsafe"
-version = "0.4.1"
+version = "0.4.2"
 description = "Threadsafe implementation of pyamqp transport for kombu"
 optional = false
 python-versions = "<4.0,>=3.8"
 files = [
-    {file = "kombu_pyamqp_threadsafe-0.4.1-py3-none-any.whl", hash = "sha256:0d62e96aeb18534d9c2b01cafff88deaea1a242284f76f7e17c948a400449965"},
-    {file = "kombu_pyamqp_threadsafe-0.4.1.tar.gz", hash = "sha256:a4efaa5fa48a7fc45509ad70be57fd93ee8f52c8eda27c57e73e3dcce71598ab"},
+    {file = "kombu_pyamqp_threadsafe-0.4.2-py3-none-any.whl", hash = "sha256:896e36c1eefa763a2e0d5fb7695aa3c7300b13af4b544d0726e26cddec7589d7"},
+    {file = "kombu_pyamqp_threadsafe-0.4.2.tar.gz", hash = "sha256:94527d0db9e53010bcd1a3f3cbc0ef511c3bb0e513b72bb249d12753647f4b3c"},
 ]
 
 [package.dependencies]
@@ -2059,4 +2059,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "676fd3c3b9d2f5265ee4a4bae7ba65281108b747de049af3e1206c4ad39bd23e"
+content-hash = "f56fd1dfbdec42796532efb33595ae09dfe4d891420347e81df0b347f55d0a8a"
