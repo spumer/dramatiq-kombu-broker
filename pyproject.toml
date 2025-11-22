@@ -44,7 +44,7 @@ default-groups = ["test", "dev"]
 bump_message = "bump(release): v$current_version → v$new_version"
 tag_format = "v$version"
 update_changelog_on_bump = true
-version_provider = "poetry"
+version_provider = "pep621"
 
 [tool.coverage.report] # https://coverage.readthedocs.io/en/latest/config.html#report
 precision = 1
