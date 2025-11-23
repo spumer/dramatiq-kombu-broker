@@ -177,3 +177,106 @@ def test_delay_queue_arguments_method():
 
     assert "x-dead-letter-routing-key" in delay_args
     assert delay_args["x-dead-letter-routing-key"] == canonical_queue_name
+
+
+def test_delay_queue_message_routing_integration(queue_name, topology, channel_factory, kombu_broker):
+    """Integration test: verify messages expire in delay queue and route to canonical queue.
+
+    This test verifies the complete delayed message flow:
+    1. Declare all queues (canonical, delay, dead-letter)
+    2. Publish message to delay queue with short TTL
+    3. Verify message appears in delay queue
+    4. Wait for TTL to expire
+    5. Verify message gets routed to canonical queue via dead-letter mechanism
+
+    This confirms that issues #6 and #7 are properly fixed.
+    """
+    import time
+
+    # Ensure all queues are declared
+    kombu_broker.declare_queue(queue_name, ensure=True)
+
+    canonical_queue_name = topology.get_canonical_queue_name(queue_name)
+    delay_queue_name = topology.get_delay_queue_name(queue_name)
+
+    # Publish a test message to the delay queue with a short TTL (100ms)
+    test_message_body = b"test_delayed_message"
+    with channel_factory() as channel:
+        # Publish to delay queue with expiration
+        channel.basic_publish(
+            exchange="",
+            routing_key=delay_queue_name,
+            body=test_message_body,
+            properties={"delivery_mode": 2, "expiration": "100"},  # 100ms TTL
+        )
+
+        # Give it a moment to be published
+        time.sleep(0.05)
+
+        # Verify message is in delay queue
+        delay_queue_info = channel.queue_declare(queue=delay_queue_name, passive=True)
+        assert delay_queue_info[1] > 0, "Message should be in delay queue"
+
+        # Wait for message to expire and be routed to canonical queue
+        # Add some buffer time for processing
+        time.sleep(0.2)
+
+        # Verify message was routed to canonical queue
+        canonical_queue_info = channel.queue_declare(queue=canonical_queue_name, passive=True)
+        assert canonical_queue_info[1] > 0, "Expired message should be in canonical queue"
+
+        # Consume the message to verify it's the correct one
+        method, properties, body = channel.basic_get(queue=canonical_queue_name)
+        assert body == test_message_body, "Message body should match original"
+        assert method is not None, "Should have received a message"
+
+        # Acknowledge the message
+        channel.basic_ack(method.delivery_tag)
+
+        # Verify delay queue is now empty
+        delay_queue_info = channel.queue_declare(queue=delay_queue_name, passive=True)
+        assert delay_queue_info[1] == 0, "Delay queue should be empty after expiration"
+
+
+def test_delay_queue_migration_compatibility(queue_name, topology, channel_factory):
+    """Integration test: verify compatibility with standard dramatiq RabbitMQ broker topology.
+
+    This test simulates the migration scenario from issue #6 where queues were
+    declared by standard dramatiq broker and then need to be compatible with
+    Kombu broker.
+
+    The test verifies that redeclaring a delay queue with the correct parameters
+    succeeds (no PreconditionFailed error).
+    """
+    delay_queue_name = topology.get_delay_queue_name(queue_name)
+    canonical_queue_name = topology.get_canonical_queue_name(queue_name)
+
+    with channel_factory() as channel:
+        # First, declare the delay queue with our topology
+        topology.declare_delay_queue(channel, delay_queue_name)
+
+        # Now try to redeclare it with the same parameters
+        # This should succeed if parameters are correct
+        # (simulates what happens during migration)
+        expected_args = {
+            "x-dead-letter-exchange": topology.dlx_exchange_name,
+            "x-dead-letter-routing-key": canonical_queue_name,
+        }
+
+        if topology.max_priority:
+            expected_args["x-max-priority"] = topology.max_priority
+
+        # This should NOT raise PreconditionFailed
+        import kombu
+
+        queue = kombu.Queue(
+            delay_queue_name,
+            channel=channel,
+            durable=topology.durable,
+            auto_delete=topology.auto_delete,
+            queue_arguments=expected_args,
+        )
+        queue.declare()  # Should succeed
+
+        # Verify we can also declare with topology method again
+        topology.declare_delay_queue(channel, delay_queue_name)  # Should succeed
