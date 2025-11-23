@@ -4,15 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dramatiq-kombu-broker"
-version = "0.2.2"
+version = "0.3.0"
 description = "Dramatiq Kombu-based broker"
 authors = [{ name = "spumer", email = "spumer-tm@yandex.ru" }]
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.10,<4.0"
 readme = "README.md"
 dependencies = [
   "kombu-pyamqp-threadsafe>=0.4.2",
-  "dramatiq>=1.17.0,<2",
-  "typing-extensions>=4.12.1,<5 ; python_version < '3.10'",
+  "dramatiq>=2.0.0,<3.0.0",
 ]
 
 [project.urls]
@@ -62,7 +61,7 @@ output = "reports/coverage.xml"
 
 [tool.mypy] # https://mypy.readthedocs.io/en/latest/config_file.html
 junit_xml = "reports/mypy.xml"
-python_version = "3.9"
+python_version = "3.10"
 ignore_missing_imports = true
 pretty = true
 show_column_numbers = true
@@ -83,7 +82,7 @@ log_cli_format = '%(asctime)s [%(levelname)-7s] [%(threadName)s] %(name)s: %(mes
 fix = true
 line-length = 100
 src = ["dramatiq_kombu_broker", "tests"]
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 ignore-init-module-imports = true
