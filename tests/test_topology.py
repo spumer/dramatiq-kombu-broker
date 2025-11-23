@@ -1,7 +1,10 @@
 import dataclasses
+import time
 
 import amqp.exceptions
+import kombu
 import pytest
+
 from dramatiq_kombu_broker.consumer import QueueReader
 from dramatiq_kombu_broker.topology import DefaultDramatiqTopology
 
@@ -145,7 +148,6 @@ def test_delay_queue_has_dead_letter_parameters(queue_name, topology, channel_fa
             expected_args["x-max-priority"] = topology.max_priority
 
         # Try to redeclare with expected arguments - should succeed if current matches
-        import kombu
         queue = kombu.Queue(
             delay_queue_name,
             channel=channel,
@@ -191,8 +193,6 @@ def test_delay_queue_message_routing_integration(queue_name, topology, channel_f
 
     This confirms that issues #6 and #7 are properly fixed.
     """
-    import time
-
     # Ensure all queues are declared
     kombu_broker.declare_queue(queue_name, ensure=True)
 
@@ -267,8 +267,6 @@ def test_delay_queue_migration_compatibility(queue_name, topology, channel_facto
             expected_args["x-max-priority"] = topology.max_priority
 
         # This should NOT raise PreconditionFailed
-        import kombu
-
         queue = kombu.Queue(
             delay_queue_name,
             channel=channel,
