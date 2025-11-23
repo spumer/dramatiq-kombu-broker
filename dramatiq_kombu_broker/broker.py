@@ -63,7 +63,7 @@ class KombuConnectionOptions(tp.TypedDict, total=False):
 class KombuBroker(Broker):
     DramatiqConsumer = DramatiqConsumer
 
-    connection_holder_cls: tp.Optional[type[ConnectionHolder]] = None
+    connection_holder_cls: type[ConnectionHolder] | None = None
     connection_holder: ConnectionHolder
 
     def __init__(
@@ -72,13 +72,13 @@ class KombuBroker(Broker):
         *,
         default_queue_name: str = DEFAULT_QUEUE_NAME,
         blocking_acknowledge: bool = True,
-        connection_holder_options: tp.Optional[dict] = None,
+        connection_holder_options: dict | None = None,
         kombu_connection_options: KombuConnectionOptions,
         confirm_delivery: bool = True,
-        max_priority: tp.Optional[int] = None,
-        max_enqueue_attempts: tp.Optional[int] = None,
-        max_declare_attempts: tp.Optional[int] = None,
-        max_producer_acquire_timeout: tp.Optional[float] = 10,
+        max_priority: int | None = None,
+        max_enqueue_attempts: int | None = None,
+        max_declare_attempts: int | None = None,
+        max_producer_acquire_timeout: float | None = 10,
     ):
         super().__init__(
             middleware=middleware,

@@ -29,9 +29,9 @@ class DefaultDramatiqTopology:
     dlx_exchange_name: str = ""
     durable: bool = True
     auto_delete: bool = False
-    max_priority: tp.Optional[int] = None
+    max_priority: int | None = None
     #: None - disable, timedelta - set given TTL as `x-message-ttl` argument
-    dead_letter_message_ttl: tp.Optional[dt.timedelta] = dramatiq_rabbitmq_dlq_ttl
+    dead_letter_message_ttl: dt.timedelta | None = dramatiq_rabbitmq_dlq_ttl
 
     @classmethod
     @functools.lru_cache

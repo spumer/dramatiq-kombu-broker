@@ -7,7 +7,7 @@ from .pooled_connection_holder import AutoConnectionReleaseChannel
 
 
 class _ReleasableChannelProto(tp.Protocol):
-    connection: tp.Optional[kombu.Connection]
+    connection: kombu.Connection | None
     channel_id: int
 
     def release(self) -> None: ...
