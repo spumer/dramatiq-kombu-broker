@@ -43,7 +43,7 @@ def kombu_broker_cls(request):
     raise NotImplementedError(request.param)
 
 
-@pytest.fixture()
+@pytest.fixture
 def kombu_broker(
     rabbitmq_dsn,
     kombu_max_declare_attempts,
@@ -69,7 +69,7 @@ def kombu_broker(
     broker.close()
 
 
-@pytest.fixture()
+@pytest.fixture
 def kombu_worker(kombu_broker):
     worker = Worker(kombu_broker, worker_threads=2)
     worker.start()
