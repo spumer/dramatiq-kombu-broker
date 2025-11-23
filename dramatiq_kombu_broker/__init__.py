@@ -6,6 +6,7 @@ from .broker import (
     KombuTransportOptions,
 )
 from .consumer import MessageProxy
+from .topology import DefaultDramatiqTopology, DLXRoutingTopology
 
 __all__ = [
     "MessageProxy",
@@ -14,4 +15,6 @@ __all__ = [
     "ConnectionSharedKombuBroker",
     "KombuTransportOptions",
     "KombuConnectionOptions",
+    "DefaultDramatiqTopology",
+    "DLXRoutingTopology",
 ]
