@@ -85,7 +85,29 @@ class DefaultDramatiqTopology:
         return queue_arguments
 
     def _get_delay_queue_arguments(self, queue_name: str) -> dict:
-        return self._get_canonical_queue_arguments(queue_name, dlx=False)
+        """Get arguments for delay queue.
+
+        Delay queues must have dead-letter parameters to route expired messages
+        back to the canonical queue. When a message's TTL expires in the delay queue,
+        it is automatically routed to the canonical queue via the dead-letter mechanism.
+
+        See issues #6 and #7.
+        """
+        queue_arguments = {}
+
+        # Route expired messages from delay queue to the canonical queue
+        canonical_queue_name = self.get_canonical_queue_name(queue_name)
+        queue_arguments.update(
+            {
+                "x-dead-letter-exchange": self.dlx_exchange_name,
+                "x-dead-letter-routing-key": canonical_queue_name,
+            }
+        )
+
+        if self.max_priority:
+            queue_arguments["x-max-priority"] = self.max_priority
+
+        return queue_arguments
 
     def _get_dead_letter_queue_arguments(self, queue_name: str) -> dict:
         if self.dead_letter_message_ttl is None:

@@ -106,3 +106,74 @@ def test_invalid_arg_value__error(queue_name, channel_factory, check_queue_exist
             amqp.exceptions.PreconditionFailed, match=r".*?invalid arg 'x-message-ttl'.*?"
         ):
             invalid_topology.declare_dead_letter_queue(channel, queue_name)
+
+
+def test_delay_queue_has_dead_letter_parameters(queue_name, topology, channel_factory):
+    """Test that delay queues have x-dead-letter-exchange and x-dead-letter-routing-key.
+
+    This is required for delayed message delivery to work properly. When a message
+    expires in the delay queue (after its TTL), it should be routed to the canonical
+    queue via the dead-letter mechanism.
+
+    Addresses issues #6 and #7.
+    """
+    canonical_queue_name = topology.get_canonical_queue_name(queue_name)
+    delay_queue_name = topology.get_delay_queue_name(queue_name)
+
+    # Declare the delay queue
+    with channel_factory() as channel:
+        topology.declare_delay_queue(channel, delay_queue_name)
+
+        # Get queue info to inspect arguments
+        # Using passive=True to just query without redeclaring
+        name, message_count, consumer_count = channel.queue_declare(
+            queue=delay_queue_name, passive=True
+        )
+
+        # Access the queue object to get arguments
+        # We need to use the channel's basic_get or inspect via management API
+        # Actually, we can check by trying to redeclare with the expected arguments
+        # and it should succeed if they match
+
+        # Expected arguments for delay queue
+        expected_args = {
+            "x-dead-letter-exchange": topology.dlx_exchange_name,
+            "x-dead-letter-routing-key": canonical_queue_name,
+        }
+
+        if topology.max_priority:
+            expected_args["x-max-priority"] = topology.max_priority
+
+        # Try to redeclare with expected arguments - should succeed if current matches
+        import kombu
+        queue = kombu.Queue(
+            delay_queue_name,
+            channel=channel,
+            durable=topology.durable,
+            auto_delete=topology.auto_delete,
+            queue_arguments=expected_args,
+        )
+        # This will raise PreconditionFailed if arguments don't match
+        queue.declare()
+
+
+def test_delay_queue_arguments_method():
+    """Test that _get_delay_queue_arguments returns dead-letter parameters.
+
+    This is a unit test for the internal method that builds delay queue arguments.
+    Addresses issues #6 and #7.
+    """
+    # Create topology without needing a broker
+    topology = DefaultDramatiqTopology()
+    queue_name = "test_queue"
+
+    canonical_queue_name = topology.get_canonical_queue_name(queue_name)
+    delay_args = topology._get_delay_queue_arguments(queue_name)
+
+    # Delay queue must have dead-letter parameters to route expired messages
+    # to the canonical queue
+    assert "x-dead-letter-exchange" in delay_args
+    assert delay_args["x-dead-letter-exchange"] == topology.dlx_exchange_name
+
+    assert "x-dead-letter-routing-key" in delay_args
+    assert delay_args["x-dead-letter-routing-key"] == canonical_queue_name
