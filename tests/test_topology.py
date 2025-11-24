@@ -234,11 +234,13 @@ def test_delay_queue_message_routing_integration(
     test_message_body = b"test_delayed_message"
     with channel_factory() as channel:
         # Publish to delay queue with expiration
-        channel.basic_publish(
-            exchange="",
-            routing_key=delay_queue_name,
+        producer = kombu.Producer(channel)
+        producer.publish(
             body=test_message_body,
-            properties={"delivery_mode": 2, "expiration": "100"},  # 100ms TTL
+            routing_key=delay_queue_name,
+            exchange="",
+            delivery_mode=2,
+            expiration="100",  # 100ms TTL
         )
 
         # Give it a moment to be published
@@ -355,11 +357,13 @@ def test_dlx_routing_topology_integration(queue_name, channel_factory, dlx_broke
     # Publish a test message to the delay queue with short TTL
     test_message_body = b"test_dlx_routing"
     with channel_factory() as channel:
-        channel.basic_publish(
-            exchange="",
-            routing_key=delay_queue_name,
+        producer = kombu.Producer(channel)
+        producer.publish(
             body=test_message_body,
-            properties={"delivery_mode": 2, "expiration": "100"},  # 100ms TTL
+            routing_key=delay_queue_name,
+            exchange="",
+            delivery_mode=2,
+            expiration="100",  # 100ms TTL
         )
 
         time.sleep(0.05)
