@@ -1,9 +1,11 @@
 import dataclasses
+import datetime as dt
 import time
 
 import amqp.exceptions
 import kombu
 import pytest
+from dramatiq_kombu_broker.broker import ConnectionPooledKombuBroker
 from dramatiq_kombu_broker.consumer import QueueReader
 from dramatiq_kombu_broker.topology import DefaultDramatiqTopology, DLXRoutingTopology
 
@@ -40,6 +42,21 @@ def check_queue_exists(channel_factory):
             return True
 
     return _check_queue_exists
+
+
+@pytest.fixture
+def dlx_broker(kombu_broker):
+    """Create a broker with DLXRoutingTopology for testing."""
+    dlx_topology = DLXRoutingTopology(delay_queue_ttl=dt.timedelta(seconds=1))
+
+    broker = ConnectionPooledKombuBroker(
+        kombu_connection_options=kombu_broker.connection_holder.connection.as_uri(),
+        topology=dlx_topology,
+    )
+
+    yield broker
+
+    broker.close()
 
 
 def test_ok(kombu_broker, check_queue_exists, queue_name, topology):
@@ -321,64 +338,48 @@ def test_dlx_routing_topology_configuration():
     assert delay_args["x-message-ttl"] == 3 * 60 * 60 * 1000  # 3 hours in ms
 
 
-def test_dlx_routing_topology_integration(queue_name, channel_factory, kombu_broker):
+def test_dlx_routing_topology_integration(queue_name, channel_factory, dlx_broker):
     """Integration test: verify DLXRoutingTopology routes through DLX.
 
     This test verifies that with DLXRoutingTopology, expired messages from
     the delay queue go to the dead letter queue (not directly to canonical queue).
     """
-    import datetime as dt
+    # Ensure all queues are declared
+    dlx_broker.declare_queue(queue_name, ensure=True)
 
-    # Create broker with DLXRoutingTopology
-    from dramatiq_kombu_broker.broker import ConnectionPooledKombuBroker
+    dlx_topology = dlx_broker.topology
+    canonical_queue_name = dlx_topology.get_canonical_queue_name(queue_name)
+    delay_queue_name = dlx_topology.get_delay_queue_name(queue_name)
+    dlx_queue_name = dlx_topology.get_dead_letter_queue_name(canonical_queue_name)
 
-    dlx_topology = DLXRoutingTopology(delay_queue_ttl=dt.timedelta(seconds=1))
+    # Publish a test message to the delay queue with short TTL
+    test_message_body = b"test_dlx_routing"
+    with channel_factory() as channel:
+        channel.basic_publish(
+            exchange="",
+            routing_key=delay_queue_name,
+            body=test_message_body,
+            properties={"delivery_mode": 2, "expiration": "100"},  # 100ms TTL
+        )
 
-    # Create a test broker with the custom topology
-    test_broker = ConnectionPooledKombuBroker(
-        kombu_connection_options=kombu_broker.connection_holder.connection.as_uri(),
-        topology=dlx_topology,
-    )
+        time.sleep(0.05)
 
-    try:
-        # Ensure all queues are declared
-        test_broker.declare_queue(queue_name, ensure=True)
+        # Verify message is in delay queue
+        delay_info = channel.queue_declare(queue=delay_queue_name, passive=True)
+        assert delay_info[1] > 0, "Message should be in delay queue"
 
-        canonical_queue_name = dlx_topology.get_canonical_queue_name(queue_name)
-        delay_queue_name = dlx_topology.get_delay_queue_name(queue_name)
-        dlx_queue_name = dlx_topology.get_dead_letter_queue_name(canonical_queue_name)
+        # Wait for expiration
+        time.sleep(0.2)
 
-        # Publish a test message to the delay queue with short TTL
-        test_message_body = b"test_dlx_routing"
-        with channel_factory() as channel:
-            channel.basic_publish(
-                exchange="",
-                routing_key=delay_queue_name,
-                body=test_message_body,
-                properties={"delivery_mode": 2, "expiration": "100"},  # 100ms TTL
-            )
+        # With DLXRoutingTopology, message should go to DLX, not canonical queue
+        dlx_info = channel.queue_declare(queue=dlx_queue_name, passive=True)
+        assert dlx_info[1] > 0, "Expired message should be in DLX queue"
 
-            time.sleep(0.05)
+        # Canonical queue should be empty (different from default behavior!)
+        canonical_info = channel.queue_declare(queue=canonical_queue_name, passive=True)
+        assert canonical_info[1] == 0, "Canonical queue should be empty with DLXRoutingTopology"
 
-            # Verify message is in delay queue
-            delay_info = channel.queue_declare(queue=delay_queue_name, passive=True)
-            assert delay_info[1] > 0, "Message should be in delay queue"
-
-            # Wait for expiration
-            time.sleep(0.2)
-
-            # With DLXRoutingTopology, message should go to DLX, not canonical queue
-            dlx_info = channel.queue_declare(queue=dlx_queue_name, passive=True)
-            assert dlx_info[1] > 0, "Expired message should be in DLX queue"
-
-            # Canonical queue should be empty (different from default behavior!)
-            canonical_info = channel.queue_declare(queue=canonical_queue_name, passive=True)
-            assert canonical_info[1] == 0, "Canonical queue should be empty with DLXRoutingTopology"
-
-            # Clean up - consume from DLX
-            method, properties, body = channel.basic_get(queue=dlx_queue_name)
-            assert body == test_message_body
-            channel.basic_ack(method.delivery_tag)
-
-    finally:
-        test_broker.close()
+        # Clean up - consume from DLX
+        method, properties, body = channel.basic_get(queue=dlx_queue_name)
+        assert body == test_message_body
+        channel.basic_ack(method.delivery_tag)
