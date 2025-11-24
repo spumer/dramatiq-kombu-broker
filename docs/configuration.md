@@ -128,6 +128,10 @@ broker = ConnectionPooledKombuBroker(
 )
 ```
 
+When `True`, worker waits for RabbitMQ to confirm that the message was acknowledged before processing the next message. This provides stronger delivery guarantees but slightly lower throughput.
+
+**See [Delivery Guarantees](delivery-guarantees.md) for detailed explanation and best practices.**
+
 ### confirm_delivery
 
 Confirm message delivery with RabbitMQ (default: `True`):
@@ -138,6 +142,10 @@ broker = ConnectionPooledKombuBroker(
     confirm_delivery=True,  # Ensures messages are persisted
 )
 ```
+
+When `True`, RabbitMQ confirms that published messages were received and routed to queues. This uses [RabbitMQ Publisher Confirms](https://www.rabbitmq.com/docs/confirms) mechanism.
+
+**See [Delivery Guarantees](delivery-guarantees.md) for detailed explanation and best practices.**
 
 ### max_priority
 

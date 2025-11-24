@@ -57,6 +57,7 @@ nav:
       - Topologies: topologies.md
       - Connection Management: connections.md
       - Message Processing: messages.md
+      - Delivery Guarantees: delivery-guarantees.md
       - Examples: examples.md
   - Advanced:
       - Migration Guide: migration.md
