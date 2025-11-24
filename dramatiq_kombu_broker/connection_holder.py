@@ -16,7 +16,7 @@ if tp.TYPE_CHECKING:
 class ConnectionHolder(abc.ABC):
     recoverable_connection_errors: tuple[Exception, ...]
     recoverable_channel_errors: tuple[Exception, ...]
-    connect_max_retries: tp.Optional[int]
+    connect_max_retries: int | None
     logger: logging.Logger
 
     @abc.abstractmethod
@@ -79,14 +79,14 @@ class ConnectionHolder(abc.ABC):
         )
 
     @abc.abstractmethod
-    def acquire_producer(self, block=True, timeout: tp.Optional[float] = None):
+    def acquire_producer(self, block=True, timeout: float | None = None):
         raise NotImplementedError
 
     @abc.abstractmethod
     def acquire_consumer_channel(
         self,
         block=True,
-        timeout: tp.Optional[float] = None,
+        timeout: float | None = None,
     ) -> "ReleasableChannel":
         raise NotImplementedError
 

@@ -6,7 +6,7 @@ from dramatiq_kombu_broker.consumer import QueueReader
 from dramatiq_kombu_broker.topology import DefaultDramatiqTopology
 
 
-@pytest.fixture()
+@pytest.fixture
 def channel_factory(kombu_broker):
     def _inner():
         return kombu_broker.connection_holder.acquire_consumer_channel()
@@ -14,19 +14,19 @@ def channel_factory(kombu_broker):
     return _inner
 
 
-@pytest.fixture()
+@pytest.fixture
 def topology(kombu_broker):
     return kombu_broker.topology
 
 
-@pytest.fixture()
+@pytest.fixture
 def queue_name(request, kombu_broker):
     queue_name = request.node.name
     yield queue_name
     kombu_broker.delete_queue(queue_name)
 
 
-@pytest.fixture()
+@pytest.fixture
 def check_queue_exists(channel_factory):
     def _check_queue_exists(queue_name):
         with channel_factory() as channel:

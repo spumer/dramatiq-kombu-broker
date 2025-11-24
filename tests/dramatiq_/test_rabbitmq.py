@@ -93,9 +93,8 @@ def test_rabbitmq__retries_middleware__actors_retry_with_backoff_on_failure(
         if not failure_time:
             failure_time = current_millis()
             raise RuntimeError("First failure.")
-        else:
-            success_time = current_millis()
-            succeeded.set()
+        success_time = current_millis()
+        succeeded.set()
 
     # If I send it a message
     do_work.send()
