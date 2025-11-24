@@ -111,7 +111,7 @@ def test_invalid_arg_value__error(queue_name, channel_factory, check_queue_exist
             invalid_topology.declare_dead_letter_queue(channel, queue_name)
 
 
-def test_delay_queue_has_dead_letter_parameters(queue_name, topology, channel_factory):
+def test_delay_queue_has_dead_letter_parameters(queue_name, channel_factory):
     """Test that delay queues have x-dead-letter-exchange and x-dead-letter-routing-key.
 
     This is required for delayed message delivery to work properly. When a message
@@ -120,6 +120,8 @@ def test_delay_queue_has_dead_letter_parameters(queue_name, topology, channel_fa
 
     Addresses issues #6 and #7.
     """
+    # Create topology without max_priority to avoid conditional
+    topology = DefaultDramatiqTopology()
     canonical_queue_name = topology.get_canonical_queue_name(queue_name)
     delay_queue_name = topology.get_delay_queue_name(queue_name)
 
@@ -127,25 +129,11 @@ def test_delay_queue_has_dead_letter_parameters(queue_name, topology, channel_fa
     with channel_factory() as channel:
         topology.declare_delay_queue(channel, delay_queue_name)
 
-        # Get queue info to inspect arguments
-        # Using passive=True to just query without redeclaring
-        name, message_count, consumer_count = channel.queue_declare(
-            queue=delay_queue_name, passive=True
-        )
-
-        # Access the queue object to get arguments
-        # We need to use the channel's basic_get or inspect via management API
-        # Actually, we can check by trying to redeclare with the expected arguments
-        # and it should succeed if they match
-
         # Expected arguments for delay queue
         expected_args = {
             "x-dead-letter-exchange": topology.dlx_exchange_name,
             "x-dead-letter-routing-key": canonical_queue_name,
         }
-
-        if topology.max_priority:
-            expected_args["x-max-priority"] = topology.max_priority
 
         # Try to redeclare with expected arguments - should succeed if current matches
         queue = kombu.Queue(
@@ -179,6 +167,31 @@ def test_delay_queue_arguments_method():
 
     assert "x-dead-letter-routing-key" in delay_args
     assert delay_args["x-dead-letter-routing-key"] == canonical_queue_name
+
+
+def test_delay_queue_arguments_without_max_priority():
+    """Verify delay queue arguments omit x-max-priority when max_priority is None."""
+    topology = DefaultDramatiqTopology(max_priority=None)
+    queue_name = "test_queue"
+
+    delay_args = topology._get_delay_queue_arguments(queue_name)
+
+    assert "x-max-priority" not in delay_args
+
+
+@pytest.mark.parametrize("max_priority", [5, 10, 255])
+def test_delay_queue_arguments_with_max_priority(max_priority):
+    """Verify delay queue arguments include x-max-priority when max_priority is configured.
+
+    Ensures explicit coverage for the priority-specific behavior and prevents silent regressions.
+    """
+    topology = DefaultDramatiqTopology(max_priority=max_priority)
+    queue_name = "test_queue"
+
+    delay_args = topology._get_delay_queue_arguments(queue_name)
+
+    assert "x-max-priority" in delay_args
+    assert delay_args["x-max-priority"] == max_priority
 
 
 def test_delay_queue_message_routing_integration(queue_name, topology, channel_factory, kombu_broker):

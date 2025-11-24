@@ -91,21 +91,20 @@ class DefaultDramatiqTopology:
         back to the canonical queue. When a message's TTL expires in the delay queue,
         it is automatically routed to the canonical queue via the dead-letter mechanism.
 
+        This method reuses canonical queue arguments (without DLX) so that any future
+        canonical queue options automatically apply to delay queues.
+
         See issues #6 and #7.
         """
-        queue_arguments = {}
+        # Start from canonical queue arguments (without DLX) to inherit common options
+        queue_arguments = self._get_canonical_queue_arguments(queue_name, dlx=False)
 
-        # Route expired messages from delay queue to the canonical queue
+        # Override DLX routing to point to the canonical queue
         canonical_queue_name = self.get_canonical_queue_name(queue_name)
-        queue_arguments.update(
-            {
-                "x-dead-letter-exchange": self.dlx_exchange_name,
-                "x-dead-letter-routing-key": canonical_queue_name,
-            }
-        )
-
-        if self.max_priority:
-            queue_arguments["x-max-priority"] = self.max_priority
+        queue_arguments |= {
+            "x-dead-letter-exchange": self.dlx_exchange_name,
+            "x-dead-letter-routing-key": canonical_queue_name,
+        }
 
         return queue_arguments
 
@@ -234,27 +233,23 @@ class DLXRoutingTopology(DefaultDramatiqTopology):
 
     def _get_delay_queue_arguments(self, queue_name: str) -> dict:
         """Route expired delay queue messages to DLX instead of canonical queue."""
-        queue_arguments = {}
+        # Start from canonical queue arguments (without DLX) to inherit common options
+        queue_arguments = self._get_canonical_queue_arguments(queue_name, dlx=False)
 
         # Get the canonical and DLX queue names
         canonical_queue_name = self.get_canonical_queue_name(queue_name)
         dlx_queue_name = self.get_dead_letter_queue_name(canonical_queue_name)
 
-        # Route to DLX when message expires
-        queue_arguments.update(
-            {
-                "x-dead-letter-exchange": self.dlx_exchange_name,
-                "x-dead-letter-routing-key": dlx_queue_name,
-            }
-        )
+        # Override DLX routing to point to DLX queue (not canonical)
+        queue_arguments |= {
+            "x-dead-letter-exchange": self.dlx_exchange_name,
+            "x-dead-letter-routing-key": dlx_queue_name,
+        }
 
         # Optional: Set maximum TTL for delay queue
         # This provides a safety limit for delayed messages
         if self.delay_queue_ttl is not None:
             ttl_ms = int(self.delay_queue_ttl.total_seconds() * 1000)
             queue_arguments["x-message-ttl"] = ttl_ms
-
-        if self.max_priority:
-            queue_arguments["x-max-priority"] = self.max_priority
 
         return queue_arguments
