@@ -229,7 +229,7 @@ class DLXRoutingTopology(DefaultDramatiqTopology):
         )
     """
 
-    delay_queue_ttl: tp.Optional[dt.timedelta] = None
+    delay_queue_ttl: dt.timedelta | None = None
 
     def _get_delay_queue_arguments(self, queue_name: str) -> dict:
         """Route expired delay queue messages to DLX instead of canonical queue."""

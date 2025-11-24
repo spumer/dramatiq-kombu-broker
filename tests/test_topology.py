@@ -4,7 +4,6 @@ import time
 import amqp.exceptions
 import kombu
 import pytest
-
 from dramatiq_kombu_broker.consumer import QueueReader
 from dramatiq_kombu_broker.topology import DefaultDramatiqTopology, DLXRoutingTopology
 
@@ -194,7 +193,9 @@ def test_delay_queue_arguments_with_max_priority(max_priority):
     assert delay_args["x-max-priority"] == max_priority
 
 
-def test_delay_queue_message_routing_integration(queue_name, topology, channel_factory, kombu_broker):
+def test_delay_queue_message_routing_integration(
+    queue_name, topology, channel_factory, kombu_broker
+):
     """Integration test: verify messages expire in delay queue and route to canonical queue.
 
     This test verifies the complete delayed message flow:
