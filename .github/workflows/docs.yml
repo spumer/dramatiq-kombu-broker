@@ -27,11 +27,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Install dependencies
-        run: |
-          pip install mkdocs-material
-          pip install mkdocs-autorefs
+        run: uv sync --only-dev
 
       - name: Build and deploy
-        run: |
-          mkdocs gh-deploy --force --clean --verbose
+        run: uv run mkdocs gh-deploy --force --clean --verbose
