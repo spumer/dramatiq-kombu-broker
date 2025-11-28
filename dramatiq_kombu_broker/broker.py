@@ -79,6 +79,7 @@ class KombuBroker(Broker):
         max_enqueue_attempts: int | None = None,
         max_declare_attempts: int | None = None,
         max_producer_acquire_timeout: float | None = 10,
+        topology: DefaultDramatiqTopology | None = None,
     ):
         super().__init__(
             middleware=middleware,
@@ -110,7 +111,12 @@ class KombuBroker(Broker):
         self._default_queue_name = default_queue_name
         self._blocking_acknowledge = blocking_acknowledge
 
-        self.topology = DefaultDramatiqTopology(max_priority=max_priority)
+        # Use provided topology or create default with max_priority
+        if topology is None:
+            self.topology = DefaultDramatiqTopology(max_priority=max_priority)
+        else:
+            self.topology = topology
+
         self.queues_pending: set[str] = set()
         self.queues: set[str] = set()  # should contain only canonical names
 

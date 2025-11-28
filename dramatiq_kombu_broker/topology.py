@@ -85,7 +85,28 @@ class DefaultDramatiqTopology:
         return queue_arguments
 
     def _get_delay_queue_arguments(self, queue_name: str) -> dict:
-        return self._get_canonical_queue_arguments(queue_name, dlx=False)
+        """Get arguments for delay queue.
+
+        Delay queues must have dead-letter parameters to route expired messages
+        back to the canonical queue. When a message's TTL expires in the delay queue,
+        it is automatically routed to the canonical queue via the dead-letter mechanism.
+
+        This method reuses canonical queue arguments (without DLX) so that any future
+        canonical queue options automatically apply to delay queues.
+
+        See issues #6 and #7.
+        """
+        # Start from canonical queue arguments (without DLX) to inherit common options
+        queue_arguments = self._get_canonical_queue_arguments(queue_name, dlx=False)
+
+        # Override DLX routing to point to the canonical queue
+        canonical_queue_name = self.get_canonical_queue_name(queue_name)
+        queue_arguments |= {
+            "x-dead-letter-exchange": self.dlx_exchange_name,
+            "x-dead-letter-routing-key": canonical_queue_name,
+        }
+
+        return queue_arguments
 
     def _get_dead_letter_queue_arguments(self, queue_name: str) -> dict:
         if self.dead_letter_message_ttl is None:
@@ -179,3 +200,56 @@ class DefaultDramatiqTopology:
             queue_arguments,
             ignore_different_topology=ignore_different_topology,
         )
+
+
+@dataclasses.dataclass
+class DLXRoutingTopology(DefaultDramatiqTopology):
+    """Alternative topology that routes expired delay queue messages through DLX.
+
+    This topology implements an alternative routing strategy where delayed messages
+    that expire in the delay queue are first routed to the dead letter queue (DLX)
+    instead of directly to the canonical queue.
+
+    Flow: delay_queue (expires) → dead_letter_queue → canonical_queue
+
+    This can be useful for:
+    - Additional monitoring/logging of delayed messages
+    - Custom processing pipelines
+    - Audit trails for delayed messages
+
+    Note: This is NOT the standard dramatiq behavior. Use DefaultDramatiqTopology
+    for standard behavior where delay_queue → canonical_queue directly.
+
+    Example usage:
+        broker = KombuBroker(
+            topology=DLXRoutingTopology(
+                delay_queue_ttl=dt.timedelta(hours=3),  # Max delay time
+            ),
+            ...
+        )
+    """
+
+    delay_queue_ttl: dt.timedelta | None = None
+
+    def _get_delay_queue_arguments(self, queue_name: str) -> dict:
+        """Route expired delay queue messages to DLX instead of canonical queue."""
+        # Start from canonical queue arguments (without DLX) to inherit common options
+        queue_arguments = self._get_canonical_queue_arguments(queue_name, dlx=False)
+
+        # Get the canonical and DLX queue names
+        canonical_queue_name = self.get_canonical_queue_name(queue_name)
+        dlx_queue_name = self.get_dead_letter_queue_name(canonical_queue_name)
+
+        # Override DLX routing to point to DLX queue (not canonical)
+        queue_arguments |= {
+            "x-dead-letter-exchange": self.dlx_exchange_name,
+            "x-dead-letter-routing-key": dlx_queue_name,
+        }
+
+        # Optional: Set maximum TTL for delay queue
+        # This provides a safety limit for delayed messages
+        if self.delay_queue_ttl is not None:
+            ttl_ms = int(self.delay_queue_ttl.total_seconds() * 1000)
+            queue_arguments["x-message-ttl"] = ttl_ms
+
+        return queue_arguments
