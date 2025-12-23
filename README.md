@@ -9,6 +9,7 @@ Dramatiq Kombu-based broker
 
 - Connection pool support (native): no unexpected connections count grow up!
 - Channel pool support (via [kombu-pyamqp-threadsafe](https://github.com/spumer/kombu-pyamqp-threadsafe) lib): consume and produce through channels, "Connection limit reach" fixed now!
+- Memory protection via configurable max_delay_time limits: prevents RabbitMQ memory exhaustion from long-delayed messages
 
 ### Minor features
 

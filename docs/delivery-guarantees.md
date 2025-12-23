@@ -1,473 +1,473 @@
 # Delivery Guarantees
 
-Когда вы отправляете задачу через `task.send()`, важно понимать что происходит с сообщением и какие гарантии вы получаете. dramatiq-kombu-broker предоставляет два ключевых параметра для управления поведением: `confirm_delivery` и `blocking_acknowledge`.
+When you send a task with `task.send()`, dramatiq-kombu-broker provides two parameters to control delivery reliability: `confirm_delivery` and `blocking_acknowledge`.
 
-## Два параметра, одна цель
+## Quick Reference
 
-Оба параметра отвечают за надежность, но работают на разных этапах:
+| Parameter | Default | Stage | What It Does |
+|-----------|---------|-------|--------------|
+| `confirm_delivery` | `True` | Publishing | RabbitMQ confirms message reached queue |
+| `blocking_acknowledge` | `True` | Processing | Worker waits for ACK confirmation |
+| `mandatory` | `True` | Publishing | Reject if queue doesn't exist |
 
-- **`confirm_delivery`** — контролирует что происходит когда вы **отправляете** сообщение (publisher side)
-- **`blocking_acknowledge`** — контролирует что происходит когда worker **обрабатывает** сообщение (consumer side)
-
-## confirm_delivery: Гарантия отправки
-
-### Что это такое
-
-`confirm_delivery` использует механизм [Publisher Confirms](https://www.rabbitmq.com/docs/confirms) из RabbitMQ. Когда этот параметр включен, брокер RabbitMQ отправляет подтверждение что сообщение было принято и направлено в очередь.
-
-**По умолчанию:** `True` (включено)
-
-### Как это работает
+**Recommended for production:**
 
 ```python
-from dramatiq_kombu_broker import ConnectionPooledKombuBroker
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={
+        "hostname": os.environ["RABBITMQ_URL"],
+        "transport_options": {
+            "confirm_publish": True,
+        },
+    },
+    confirm_delivery=True,         # Ensure delivery
+    blocking_acknowledge=True,     # Ensure processing
+)
+```
 
-# С confirm_delivery=True (по умолчанию)
+## confirm_delivery: Publishing Guarantees
+
+**Default:** `True`
+
+Controls whether RabbitMQ confirms that published messages were accepted and routed to queues using [Publisher Confirms](https://www.rabbitmq.com/docs/confirms).
+
+### With confirm_delivery=True
+
+```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={...},
-    confirm_delivery=True,  # RabbitMQ подтверждает прием
+    confirm_delivery=True,  # Default
 )
 
 @dramatiq.actor
 def send_email(email):
     ...
 
-# Если RabbitMQ не подтвердит прием, вы получите исключение здесь:
-try:
-    send_email.send("user@example.com")
-except Exception as e:
-    # Сообщение НЕ было доставлено в очередь
-    log_failed_task(e)
+# Raises exception if RabbitMQ doesn't confirm
+send_email.send("user@example.com")
 ```
 
-### Что гарантирует confirm_delivery
+**Guarantees:**
+- Message reached RabbitMQ broker
+- Message was routed to a queue (via `mandatory=True`)
+- Synchronous errors on failure
 
-Когда `confirm_delivery=True`, вы получаете три важных гарантии:
+**Trade-off:** Slightly slower publishing
 
-1. **Сообщение принято брокером** — RabbitMQ получил ваше сообщение
-2. **Сообщение направлено в очередь** — благодаря `mandatory=True` (включен по умолчанию), сообщение не будет отброшено если очередь не найдена
-3. **Синхронная ошибка** — если что-то пошло не так, исключение будет брошено прямо в `task.send()`
-
-Важно понимать: Publisher Confirms **не** гарантируют что сообщение было обработано консьюмером. Они гарантируют только что сообщение достигло брокера и было помещено в очередь.
-
-### mandatory=True по умолчанию
-
-dramatiq-kombu-broker использует `mandatory=True` при публикации сообщений (см. [broker.py:368](../dramatiq_kombu_broker/broker.py#L368)). Это означает:
-
-- Если очереди не существует, RabbitMQ вернет сообщение отправителю
-- Вы получите исключение `amqp.exceptions.ChannelError(312, 'NO_ROUTE')`
-- Сообщение не будет потеряно "в никуда"
-
-Подробнее: [RabbitMQ Mandatory Messages](https://www.compilenrun.com/docs/middleware/rabbitmq/rabbitmq-reliability/rabbitmq-mandatory-messages/)
-
-### Когда отключать confirm_delivery
+### With confirm_delivery=False
 
 ```python
-# Отключить для максимальной скорости (не рекомендуется для продакшна)
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
         "hostname": "...",
         "transport_options": {
-            "confirm_publish": False,  # Отключить на уровне транспорта
+            "confirm_publish": False,
         },
     },
-    confirm_delivery=False,  # И на уровне брокера
+    confirm_delivery=False,
 )
 ```
 
-**Когда это нужно:**
+**When to use:**
+- Very high throughput (thousands of tasks/second)
+- Non-critical tasks (logging, analytics)
+- Can tolerate message loss
 
-- Очень высокая нагрузка (десятки тысяч задач в секунду)
-- Задачи не критичны (логирование, аналитика)
-- Вы готовы потерять сообщения при сбоях
+**Risks:**
+- Messages lost on network issues
+- Messages lost on RabbitMQ restart
+- No error notification
 
-**Что вы теряете:**
+## blocking_acknowledge: Processing Guarantees
 
-- Сообщение может быть потеряно при проблемах с сетью
-- Сообщение может быть потеряно при перезапуске RabbitMQ
-- Вы не узнаете об ошибках до тех пор пока задача не будет обработана (или не будет)
+**Default:** `True`
 
-## blocking_acknowledge: Гарантия обработки
+Controls when worker sends ACK (acknowledgment) to RabbitMQ after processing a message.
 
-### Что это такое
-
-`blocking_acknowledge` контролирует когда worker отправляет ACK (подтверждение обработки) обратно в RabbitMQ после выполнения задачи.
-
-**По умолчанию:** `True` (блокирующий режим)
-
-### Как это работает
-
-Когда worker обрабатывает сообщение, он должен отправить ACK чтобы RabbitMQ удалил сообщение из очереди. Есть два способа:
-
-**Блокирующий режим (blocking_acknowledge=True):**
+### With blocking_acknowledge=True (Recommended)
 
 ```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={...},
-    blocking_acknowledge=True,  # По умолчанию
+    blocking_acknowledge=True,  # Default
 )
 
 @dramatiq.actor
 def process_order(order_id):
-    # 1. Задача выполняется
     result = heavy_computation(order_id)
-
-    # 2. Worker отправляет ACK и ЖДЕТ подтверждения от RabbitMQ
-    # 3. Только после подтверждения берет следующее сообщение
+    # Worker sends ACK and WAITS for confirmation
+    # Only then takes next message
     return result
 ```
 
-**Неблокирующий режим (blocking_acknowledge=False):**
+**Use for:**
+- Financial operations
+- Critical tasks
+- Tasks with side effects (emails, database changes)
+- At-least-once delivery requirements
 
-```python
-broker = ConnectionPooledKombuBroker(
-    kombu_connection_options={...},
-    blocking_acknowledge=False,  # Асинхронный ACK
-)
+**Trade-off:** Worker waits for ACK confirmation before next message
 
-@dramatiq.actor
-def process_order(order_id):
-    # 1. Задача выполняется
-    result = heavy_computation(order_id)
-
-    # 2. Worker помещает ACK в очередь и СРАЗУ берет следующее сообщение
-    # 3. ACK будет отправлен позже, перед получением нового сообщения
-    return result
-```
-
-### Разница в поведении
-
-Рассмотрим пример с ошибкой сети:
-
-```python
-# blocking_acknowledge=True
-@dramatiq.actor
-def important_task():
-    result = charge_credit_card()
-    # Worker пытается отправить ACK
-    # Если сеть упала — worker получит исключение ЗДЕСЬ
-    # Сообщение останется в очереди
-    # После переподключения задача будет выполнена снова
-    return result
-
-# blocking_acknowledge=False
-@dramatiq.actor
-def important_task():
-    result = charge_credit_card()
-    # Worker помещает ACK в очередь и берет следующую задачу
-    # Если сеть упадет до отправки ACK — сообщение останется в очереди
-    # Но вы уже начали обрабатывать следующее сообщение
-    return result
-```
-
-### Когда использовать blocking_acknowledge=True
-
-**Используйте по умолчанию для:**
-
-- Финансовых операций
-- Критически важных задач
-- Задач с побочными эффектами (отправка email, изменение базы данных)
-- Когда важна гарантия "at-least-once delivery"
-
-**Преимущества:**
-
-- Гарантия что ACK был отправлен и подтвержден
-- Исключение при проблемах с сетью происходит сразу
-- Меньше риска потери данных
-
-**Недостатки:**
-
-- Немного медленнее (worker ждет подтверждения ACK)
-- Worker не может взять следующее сообщение пока не получит подтверждение
-
-### Когда использовать blocking_acknowledge=False
+### With blocking_acknowledge=False
 
 ```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={...},
     blocking_acknowledge=False,
 )
+
+@dramatiq.actor
+def process_order(order_id):
+    result = heavy_computation(order_id)
+    # Worker queues ACK and IMMEDIATELY takes next message
+    # ACK sent later, asynchronously
+    return result
 ```
 
-**Используйте для:**
+**Use for:**
+- High-throughput systems
+- Idempotent tasks (safe to run twice)
+- Low-priority tasks
 
-- Высоконагруженных систем
-- Идемпотентных задач (можно выполнить повторно без проблем)
-- Задач с низким приоритетом
+**Risks:**
+- ACK lost on network failure
+- Message may be processed twice
+- Errors logged but don't block execution
 
-**Преимущества:**
+## Configuration Patterns
 
-- Выше throughput (worker не ждет подтверждения)
-- Worker сразу берет следующее сообщение
-
-**Недостатки:**
-
-- ACK может быть потерян при сбое сети
-- Сообщение может быть обработано дважды
-- Ошибки ACK логируются, но не блокируют выполнение
-
-## Комбинирование параметров
-
-### Максимальная надежность (рекомендуется для продакшна)
+### Maximum Reliability (Production Default)
 
 ```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
-        "hostname": "amqp://user:pass@rabbitmq.prod:5672/",
+        "hostname": "amqp://user:pass@rabbitmq:5672/",
         "transport_options": {
-            "confirm_publish": True,  # Publisher confirms
+            "confirm_publish": True,
         },
     },
-    confirm_delivery=True,        # Подтверждение отправки
-    blocking_acknowledge=True,    # Подтверждение обработки
+    confirm_delivery=True,        # Confirm publishing
+    blocking_acknowledge=True,    # Confirm processing
 )
 ```
 
-**Гарантии:**
+**Guarantees:** At-least-once delivery, all errors raised
 
-- Сообщение точно попало в очередь
-- Worker точно отправил ACK
-- Исключения при любых проблемах
-- At-least-once delivery
+**Trade-off:** Slightly lower throughput
 
-**Недостаток:** немного ниже производительность
-
-### Максимальная скорость (только для некритичных задач)
+### Maximum Throughput (Non-Critical Tasks Only)
 
 ```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
-        "hostname": "amqp://user:pass@rabbitmq.prod:5672/",
+        "hostname": "amqp://user:pass@rabbitmq:5672/",
         "transport_options": {
-            "confirm_publish": False,  # Без подтверждения
+            "confirm_publish": False,
         },
     },
-    confirm_delivery=False,        # Без подтверждения отправки
-    blocking_acknowledge=False,    # Без блокирующего ACK
+    confirm_delivery=False,       # Skip confirmation
+    blocking_acknowledge=False,   # Async ACK
 )
 ```
 
-**Преимущества:**
+**Benefits:** Maximum speed, minimal latency
 
-- Максимальный throughput
-- Минимальная задержка
+**Risks:** Messages may be lost, tasks may run twice
 
-**Недостатки:**
+### Hybrid Approach
 
-- Сообщения могут быть потеряны
-- Задачи могут быть обработаны дважды
-- Нет исключений при проблемах
-
-### Гибридный подход
+Use different brokers for different task types:
 
 ```python
-# Основной брокер: надежность
+# Critical tasks: reliable
 main_broker = ConnectionPooledKombuBroker(
     kombu_connection_options={...},
     confirm_delivery=True,
     blocking_acknowledge=True,
 )
 
-# Брокер для аналитики: скорость
+# Analytics: fast
 analytics_broker = ConnectionPooledKombuBroker(
     kombu_connection_options={...},
     confirm_delivery=False,
     blocking_acknowledge=False,
 )
 
-# Критичные задачи
 @dramatiq.actor(broker=main_broker)
 def charge_payment(amount):
     ...
 
-# Некритичные задачи
 @dramatiq.actor(broker=analytics_broker)
 def track_event(event_type, data):
     ...
 ```
 
-## Как работает ACK под капотом
+## Common Issues
 
-Посмотрим на код из [consumer.py](../dramatiq_kombu_broker/consumer.py):
+### Tasks Running Twice
 
-```python
-def ack(self, message, *, block=None, timeout=None):
-    if block is None:
-        block = self.blocking_acknowledge
-
-    if self._is_threadsafe() and block:
-        # Блокирующий ACK: отправляем сразу
-        self._ack_or_log_error(message)
-        return
-
-    if not block:
-        # Неблокирующий: добавляем в очередь
-        self._ack_queue.append((message, None))
-    else:
-        # Блокирующий но в другом потоке: ждем через Event
-        done = threading.Event()
-        self._ack_queue.append((message, done))
-        done.wait(timeout)
-```
-
-Когда `blocking_acknowledge=False`, ACK добавляется в очередь `_ack_queue` и отправляется позже в методе `__next__()` перед получением следующего сообщения:
-
-```python
-def __next__(self):
-    # Сначала обрабатываем накопившиеся ACK/NACK
-    self._process_queued_ack_events()
-    self._process_queued_nack_events()
-
-    # Потом получаем новое сообщение
-    message = self._reader.pop(timeout=...)
-    return message
-```
-
-Это позволяет worker не ждать подтверждения от RabbitMQ и сразу перейти к следующей задаче.
-
-## Проблемы и решения
-
-### Проблема: "connection already closed" при ACK
-
-Эта ошибка возникает когда соединение разорвалось между получением сообщения и отправкой ACK.
-
-**С blocking_acknowledge=True:**
-
-```python
-broker = ConnectionPooledKombuBroker(
-    kombu_connection_options={...},
-    blocking_acknowledge=True,
-)
-
-# Worker бросит исключение при попытке ACK
-# Сообщение останется в очереди
-# После переподключения задача будет обработана снова
-```
-
-**С blocking_acknowledge=False:**
-
-```python
-broker = ConnectionPooledKombuBroker(
-    kombu_connection_options={...},
-    blocking_acknowledge=False,
-)
-
-# ACK будет помещен в очередь
-# Ошибка будет залогирована позже
-# Worker уже начал обрабатывать следующее сообщение
-```
-
-**Решение:** Используйте `blocking_acknowledge=True` для критичных задач и убедитесь что ваши задачи идемпотентны (можно выполнить повторно).
-
-### Проблема: Низкая производительность при большом количестве мелких задач
-
-Если у вас тысячи мелких задач в секунду, `blocking_acknowledge=True` может стать узким горлышком.
-
-**Решение 1:** Используйте `blocking_acknowledge=False` если задачи идемпотентны
-
-```python
-broker = ConnectionPooledKombuBroker(
-    kombu_connection_options={...},
-    confirm_delivery=True,         # Оставляем для надежности отправки
-    blocking_acknowledge=False,    # Отключаем для скорости
-)
-```
-
-**Решение 2:** Увеличьте количество workers вместо отключения блокирующего ACK
-
-```bash
-# Запустите больше процессов
-dramatiq tasks --processes 8 --threads 4
-```
-
-### Проблема: Задачи выполняются дважды
-
-Это нормальное поведение для систем с гарантией "at-least-once delivery". Сообщение может быть обработано дважды если:
-
-1. Worker выполнил задачу
-2. Отправил ACK
-3. Сеть упала до подтверждения
-4. RabbitMQ не получил ACK и вернул сообщение в очередь
-5. Другой worker взял сообщение и выполнил снова
-
-**Решение:** Делайте задачи идемпотентными
+This is normal with at-least-once delivery. Make tasks idempotent:
 
 ```python
 @dramatiq.actor
 def process_payment(payment_id):
-    # Проверяем что платеж еще не обработан
     payment = Payment.objects.get(id=payment_id)
     if payment.status == "processed":
-        return  # Уже обработан, ничего не делаем
+        return  # Already done
 
-    # Обрабатываем
     charge_card(payment)
     payment.status = "processed"
     payment.save()
 ```
 
-## Мониторинг и метрики
+### Low Throughput
 
-Важно отслеживать проблемы с доставкой сообщений:
+If you have thousands of small tasks per second:
+
+**Option 1:** Use `blocking_acknowledge=False` for idempotent tasks
+
+```python
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={...},
+    confirm_delivery=True,         # Keep for reliability
+    blocking_acknowledge=False,    # Speed up processing
+)
+```
+
+**Option 2:** Scale workers instead
+
+```bash
+dramatiq tasks --processes 8 --threads 4
+```
+
+### Connection Closed During ACK
+
+**With blocking_acknowledge=True:**
+- Exception raised immediately
+- Message stays in queue
+- Task retried after reconnection
+
+**With blocking_acknowledge=False:**
+- Error logged
+- Worker already processing next message
+- May cause duplicate processing
+
+**Solution:** Use `blocking_acknowledge=True` for critical tasks and ensure idempotency.
+
+## Monitoring
+
+Track delivery failures:
 
 ```python
 from prometheus_client import Counter
 
 delivery_failures = Counter(
     'dramatiq_delivery_failures_total',
-    'Number of failed message deliveries',
+    'Failed message deliveries',
 )
 
 @dramatiq.actor
 def important_task(data):
     try:
         result = process(data)
-    except Exception as e:
+    except Exception:
         delivery_failures.inc()
         raise
     return result
 ```
 
-В RabbitMQ Management UI отслеживайте:
+Monitor in RabbitMQ Management UI:
+- **Ready** - Messages in queue
+- **Unacked** - Messages taken but not ACKed
+- **Publish rate** - Throughput
+- **Consumer count** - Active workers
 
-- **Ready messages** — сообщения в очереди
-- **Unacked messages** — сообщения взятые worker'ами но еще не подтвержденные
-- **Publish rate** — скорость отправки
-- **Consumer count** — количество активных consumers
+## Memory and Performance Implications
 
-## Ссылки и дополнительная информация
+### Delayed Messages and Memory
 
-- [RabbitMQ Publisher Confirms](https://www.rabbitmq.com/docs/confirms) — официальная документация о publisher confirms
-- [RabbitMQ Consumer Acknowledgements](https://www.rabbitmq.com/docs/confirms#consumer-acknowledgements) — как работают consumer acknowledgements
-- [RabbitMQ Reliability Guide](https://www.rabbitmq.com/docs/reliability) — общее руководство по надежности
-- [RabbitMQ Mandatory Flag](https://www.compilenrun.com/docs/middleware/rabbitmq/rabbitmq-reliability/rabbitmq-mandatory-messages/) — подробно о mandatory флаге
-- [Kombu Documentation](https://docs.celeryq.dev/projects/kombu/en/latest/) — документация Kombu
-- [Dramatiq Documentation](https://dramatiq.io/) — документация Dramatiq
+When Dramatiq sends delayed messages, they stay **unacked** in RabbitMQ until the delay expires. This creates memory pressure:
 
-## Быстрая справка
+- **Unacked messages accumulate** - Each delayed message [consumes RAM](https://www.rabbitmq.com/docs/confirms) on the RabbitMQ server
+- **Transaction log grows** - [Quorum queues maintain WAL logs](https://www.rabbitmq.com/docs/quorum-queues) for all unacked messages, consuming disk space
+- **Performance degradation** - High volumes of long-lived delayed messages impact RabbitMQ performance and can [overwhelm consumers](https://www.cloudamqp.com/blog/part1-rabbitmq-best-practice.html)
+- **Memory exhaustion risk** - Very long delays (days/weeks) can [trigger memory alarms](https://github.com/rabbitmq/rabbitmq-server/issues/1164)
 
-| Параметр | По умолчанию | Этап | Гарантия |
-|----------|--------------|------|----------|
-| `confirm_delivery` | `True` | Отправка | Сообщение попало в очередь |
-| `blocking_acknowledge` | `True` | Обработка | ACK был подтвержден RabbitMQ |
-| `mandatory` | `True` | Отправка | Сообщение не будет отброшено |
+This is different from immediate messages, which are acknowledged quickly after processing.
 
-**Рекомендация для продакшна:**
+### Protection with max_delay_time
+
+Configure `max_delay_time` to prevent memory issues from long delays:
 
 ```python
+from dramatiq_kombu_broker import ConnectionPooledKombuBroker, DefaultDramatiqTopology
+import datetime as dt
+
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
-        "hostname": os.environ["RABBITMQ_URL"],
-        "heartbeat": 60,
+        "hostname": "amqp://user:pass@rabbitmq:5672/",
         "transport_options": {
             "confirm_publish": True,
-            "max_retries": 3,
         },
     },
+    topology=DefaultDramatiqTopology(
+        max_delay_time=dt.timedelta(hours=3)  # Fail-fast protection
+    ),
     confirm_delivery=True,
     blocking_acknowledge=True,
-    max_enqueue_attempts=3,
 )
 ```
 
-Эта конфигурация дает максимальную надежность с приемлемой производительностью для большинства приложений.
+**How it works:**
+
+1. **Application validation** - Broker raises `DelayTooLongError` when delay exceeds limit
+2. **RabbitMQ failsafe** - Queue-level TTL (`x-message-ttl`) as backup protection
+3. **Defense in depth** - Two layers ensure protection even if one fails
+
+### Monitoring
+
+Track rejected messages due to excessive delay:
+
+```python
+from prometheus_client import Counter
+from dramatiq_kombu_broker import DelayTooLongError
+
+delay_too_long_errors = Counter(
+    'dramatiq_delay_too_long_errors_total',
+    'Messages rejected due to excessive delay',
+    ['queue'],
+)
+
+@dramatiq.actor
+def process_task(task_id):
+    ...
+
+# When sending with delay
+try:
+    process_task.send_with_options(args=(123,), delay=delay_ms)
+except DelayTooLongError as e:
+    delay_too_long_errors.labels(queue=e.queue_name).inc()
+    logger.error(
+        f"Rejected task: delay {e.delay}ms exceeds max {e.max_delay}ms"
+    )
+    raise
+```
+
+**What to monitor:**
+
+- `DelayTooLongError` exceptions - indicates delays exceeding limits
+- RabbitMQ memory usage - watch for growth with delayed messages
+- Queue depths - monitor `*.DQ` (delay queue) sizes
+- Unacked message counts - high counts indicate memory pressure
+
+### Recommendations
+
+| Scenario | max_delay_time | Monitoring | Notes |
+|----------|---------------|------------|-------|
+| Critical production | 3 hours | Alert on `DelayTooLongError` | Conservative limit, prevents memory issues |
+| Background jobs | 24 hours | Log and track trends | Suitable for daily tasks |
+| Development/testing | None | Optional | No restrictions, easier testing |
+| High-volume delayed tasks | 1-6 hours | Alert + memory monitoring | Lower limit for high message volumes |
+
+**Configuration examples:**
+
+```python
+# Conservative production setup
+topology = DefaultDramatiqTopology(
+    max_delay_time=dt.timedelta(hours=3)
+)
+
+# Background job setup
+topology = DefaultDramatiqTopology(
+    max_delay_time=dt.timedelta(hours=24)
+)
+
+# Development (no limits)
+topology = DefaultDramatiqTopology()  # max_delay_time=None (default)
+```
+
+### When NOT to Use Delayed Messages
+
+Delayed messages are powerful but have limitations. Use alternatives in these cases:
+
+| Scenario | Why Not Delayed Messages | Alternative |
+|----------|-------------------------|-------------|
+| Delays > 24 hours | Memory pressure, inefficient | Cron jobs, APScheduler, Celery Beat |
+| High-precision timing | RabbitMQ TTL has ~1s precision | Dedicated scheduler, database polling |
+| Very high volume delays | Memory exhaustion risk | Batch processing, time-series database |
+| Delays > weeks | Extremely inefficient | Calendar-based scheduling systems |
+| Dynamic rescheduling | Messages can't be modified once queued | Database-backed task queue |
+
+**Example: Wrong approach**
+
+```python
+# DON'T: Use delayed messages for weekly reports
+@dramatiq.actor
+def send_weekly_report(user_id):
+    ...
+
+# This will hold messages unacked for 7 days!
+send_weekly_report.send_with_options(
+    args=(user_id,),
+    delay=7*24*60*60*1000  # 7 days in ms
+)
+```
+
+**Example: Right approach**
+
+```python
+# DO: Use cron or APScheduler for recurring tasks
+from apscheduler.schedulers.blocking import BlockingScheduler
+
+scheduler = BlockingScheduler()
+
+@scheduler.scheduled_job('cron', day_of_week='mon', hour=9)
+def generate_weekly_reports():
+    for user_id in get_active_users():
+        send_weekly_report.send(user_id)  # Immediate execution
+
+scheduler.start()
+```
+
+### Performance Trade-offs
+
+**With max_delay_time protection:**
+
+| Aspect | Impact | Mitigation |
+|--------|--------|------------|
+| Publishing | Minimal (one int comparison) | Negligible performance impact |
+| Memory | Reduced (prevents long delays) | Lower RabbitMQ memory usage |
+| Reliability | Higher (fail-fast on issues) | Better error visibility |
+| Queue creation | One-time TTL setup | No ongoing overhead |
+
+**Without max_delay_time (default):**
+
+| Aspect | Impact | Risk |
+|--------|--------|------|
+| Publishing | Slightly faster (no validation) | No protection from excessive delays |
+| Memory | Can grow unbounded | RabbitMQ memory exhaustion |
+| Reliability | No early error detection | Silent failures, debugging harder |
+| Operations | No limits | Requires manual monitoring |
+
+## Further Reading
+
+**Delivery Guarantees:**
+- [RabbitMQ Publisher Confirms](https://www.rabbitmq.com/docs/confirms) - Publishing guarantees and acknowledgements
+- [RabbitMQ Consumer Acknowledgements](https://www.rabbitmq.com/docs/confirms#consumer-acknowledgements) - Processing guarantees
+- [RabbitMQ Reliability Guide](https://www.rabbitmq.com/docs/reliability) - Overall reliability patterns
+- [RabbitMQ Mandatory Flag](https://www.compilenrun.com/docs/middleware/rabbitmq/rabbitmq-reliability/rabbitmq-mandatory-messages/) - Message routing guarantees
+
+**Memory and Performance:**
+- [Quorum Queues](https://www.rabbitmq.com/docs/quorum-queues) - Write-ahead-log (WAL) and memory management
+- [RabbitMQ Best Practices - CloudAMQP](https://www.cloudamqp.com/blog/part1-rabbitmq-best-practice.html) - Managing unacked messages
+- [How to Handle High Memory Usage - CloudAMQP](https://www.cloudamqp.com/blog/identify-and-protect-against-high-cpu-and-memory-usage.html) - Memory troubleshooting
+- [Key Metrics for RabbitMQ Monitoring - Datadog](https://www.datadoghq.com/blog/rabbitmq-monitoring/) - Monitoring memory and unacked messages
+
+**Delayed Messages:**
+- [Time-To-Live and Expiration](https://www.rabbitmq.com/docs/ttl) - TTL behavior and limitations
+- [Delayed Messages Documentation - CloudAMQP](https://www.cloudamqp.com/docs/delayed-messages.html) - Best practices for delayed messages
+- [RabbitMQ Message TTL - Compile N Run](https://www.compilenrun.com/docs/middleware/rabbitmq/rabbitmq-queue-management/rabbitmq-message-ttl/) - TTL ordering issues
+
+**Troubleshooting:**
+- [13 Common RabbitMQ Mistakes - CloudAMQP](https://www.cloudamqp.com/blog/part4-rabbitmq-13-common-errors.html) - Common pitfalls
+- [GitHub Issue #1164](https://github.com/rabbitmq/rabbitmq-server/issues/1164) - Real-world memory alarm case

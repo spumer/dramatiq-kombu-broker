@@ -17,9 +17,10 @@ from dramatiq.common import current_millis
 
 from .connection_holder import ConnectionHolder
 from .consumer import DramatiqConsumer, ThreadSafeDramatiqConsumer
+from .exceptions import DelayTooLongError
 from .pooled_connection_holder import PooledConnectionHolder
 from .shared_connection_holder import SharedConnectionHolder
-from .topology import DefaultDramatiqTopology
+from .topology import DefaultDramatiqTopology, RabbitMQTopology
 
 DEFAULT_QUEUE_NAME = "default"
 
@@ -65,6 +66,7 @@ class KombuBroker(Broker):
 
     connection_holder_cls: type[ConnectionHolder] | None = None
     connection_holder: ConnectionHolder
+    topology: RabbitMQTopology
 
     def __init__(
         self,
@@ -79,7 +81,8 @@ class KombuBroker(Broker):
         max_enqueue_attempts: int | None = None,
         max_declare_attempts: int | None = None,
         max_producer_acquire_timeout: float | None = 10,
-        topology: DefaultDramatiqTopology | None = None,
+        confirm_timeout: float | None = 5.0,
+        topology: RabbitMQTopology | None = None,
     ):
         super().__init__(
             middleware=middleware,
@@ -107,6 +110,7 @@ class KombuBroker(Broker):
         self._max_declare_attempts = max_declare_attempts
         self._max_enqueue_attempts = max_enqueue_attempts
         self._max_producer_acquire_timeout = max_producer_acquire_timeout
+        self._confirm_timeout = confirm_timeout
 
         self._default_queue_name = default_queue_name
         self._blocking_acknowledge = blocking_acknowledge
@@ -311,6 +315,18 @@ class KombuBroker(Broker):
         self.declare_queue(queue_name, ensure=True)
 
         if delay is not None:
+            # Validate delay against topology max_delay_time (fail-fast)
+            if self.topology.max_delay_time is not None:
+                max_delay_ms = int(self.topology.max_delay_time.total_seconds() * 1000)
+                if delay > max_delay_ms:
+                    raise DelayTooLongError(
+                        f"Message delay {delay}ms exceeds max_delay_time "
+                        f"{max_delay_ms}ms configured in topology for queue '{queue_name}'",
+                        delay=delay,
+                        max_delay=max_delay_ms,
+                        queue_name=queue_name,
+                    )
+
             queue_name = self.topology.get_delay_queue_name(queue_name)
             message_eta = current_millis() + delay
             message = message.copy(
@@ -324,7 +340,7 @@ class KombuBroker(Broker):
         self.emit_before("enqueue", message, delay)
 
         try:
-            self._enqueue_message(queue_name, message)
+            self._enqueue_message(queue_name, message, delay=delay)
         except amqp.exceptions.ChannelError as exc:
             if exc.reply_code != 312:  # 312 - no-route
                 raise
@@ -333,30 +349,46 @@ class KombuBroker(Broker):
                 self.queues.discard(self.topology.get_canonical_queue_name(queue_name))
                 self.declare_queue(queue_name, ensure=True)
 
-            self._enqueue_message(queue_name, message)
+            self._enqueue_message(queue_name, message, delay=delay)
 
         self.emit_after("enqueue", message, delay)
         return message
 
-    def _enqueue_message(self, queue_name, message):
+    def _enqueue_message(self, queue_name, message, *, delay=None):
+        publish_kwargs = {
+            "exchange": "",
+            "routing_key": queue_name,
+            "body": message.encode(),
+            "delivery_mode": 2,
+            "priority": message.options.get("broker_priority"),
+            "retry": True,
+            "retry_policy": {
+                "max_retries": self._max_enqueue_attempts,
+                "errback": self.on_connection_error_errback,
+            },
+            # will raise amqp.exceptions.ChannelError(312, ...) when route not found (e.g.: queue not exists)
+            "mandatory": True,
+            # Timeout for waiting publish confirmation from RabbitMQ.
+            # Prevents deadlock when connection dies during confirm wait.
+            "confirm_timeout": self._confirm_timeout,
+        }
+
+        # Set per-message TTL for delayed messages
+        # Note: RabbitMQ per-message TTL has ordering limitations - messages expire
+        # only when they reach the head of the queue. This means a message with
+        # longer TTL can block messages with shorter TTL behind it.
+        if delay is not None:
+            # Convert delay (milliseconds) to TTL (seconds) for RabbitMQ expiration.
+            # When message TTL expires in delay queue, RabbitMQ DLX automatically
+            # routes it to the canonical queue for processing.
+            message_ttl_seconds = delay / 1000.0
+            publish_kwargs["expiration"] = message_ttl_seconds
+
         with self.connection_holder.acquire_producer(
             block=True,
             timeout=self._max_producer_acquire_timeout,
         ) as producer:
-            return producer.publish(
-                exchange="",
-                routing_key=queue_name,
-                body=message.encode(),
-                delivery_mode=2,
-                priority=message.options.get("broker_priority"),
-                retry=True,
-                retry_policy={
-                    "max_retries": self._max_enqueue_attempts,
-                    "errback": self.on_connection_error_errback,
-                },
-                # will raise amqp.exceptions.ChannelError(312, ...) when route not found (e.g.: queue not exists)
-                mandatory=True,
-            )
+            return producer.publish(**publish_kwargs)
 
     def get_declared_queues(self):
         """Get all declared queues.
@@ -407,7 +439,9 @@ class KombuBroker(Broker):
         if include_pending:
             queues |= self.queues_pending
 
-        for queue_name in queues:
+        uniq_names = set(self.topology.get_canonical_queue_name(qname) for qname in queues)
+
+        for queue_name in uniq_names:
             self.delete_queue(queue_name)
 
     def consume(self, queue_name, prefetch=1, timeout=5000):

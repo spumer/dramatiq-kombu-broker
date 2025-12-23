@@ -1,48 +1,17 @@
 # Connection Management
 
-How dramatiq-kombu-broker handles connections to RabbitMQ.
+Operational guide for managing RabbitMQ connections: how connections are created, monitored, troubleshooted, and maintained at runtime.
+
+For configuration parameters, see [Configuration](configuration.md).
 
 ## Broker Types
 
-### ConnectionPooledKombuBroker
+dramatiq-kombu-broker provides two connection strategies:
 
-Maintains a pool of connections. Each connection is reused for multiple operations.
+- **ConnectionPooledKombuBroker**: Multiple connections, each reused for operations
+- **ConnectionSharedKombuBroker**: Single shared connection with channel pooling
 
-```python
-from dramatiq_kombu_broker import ConnectionPooledKombuBroker
-
-broker = ConnectionPooledKombuBroker(
-    kombu_connection_options={"hostname": "amqp://..."},
-    connection_holder_options={
-        "max_connections": 10,  # Pool size
-    },
-)
-```
-
-**Use when:**
-- You have multiple worker processes
-- High message throughput
-- Each worker needs its own connection
-
-### ConnectionSharedKombuBroker
-
-Single shared connection with channel pooling.
-
-```python
-from dramatiq_kombu_broker import ConnectionSharedKombuBroker
-
-broker = ConnectionSharedKombuBroker(
-    kombu_connection_options={"hostname": "amqp://..."},
-    connection_holder_options={
-        "consumer_channel_pool_size": 5,
-    },
-)
-```
-
-**Use when:**
-- Threaded applications (Django, Flask)
-- Want to minimize connection count
-- Multiple threads share one connection
+See [Configuration - Broker Types](configuration.md#broker-types) for detailed parameters and usage examples.
 
 ## Connection Lifecycle
 
@@ -87,7 +56,11 @@ broker = ConnectionPooledKombuBroker(
 
 ## Connection Visibility
 
-Connections show hostname in RabbitMQ management UI:
+The broker automatically adds hostname to connection properties, making it easy to identify connections in RabbitMQ management UI:
+
+![Connection hostname in RabbitMQ UI](../media/connection_hostname.png)
+
+You can also set a custom connection name:
 
 ```python
 broker = ConnectionPooledKombuBroker(

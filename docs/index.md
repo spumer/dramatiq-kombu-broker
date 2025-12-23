@@ -12,8 +12,6 @@ A Kombu-based broker for [Dramatiq](https://dramatiq.io/) with connection poolin
 
 **Topology management** - Change queue configurations without breaking your existing setup. The broker handles topology mismatches gracefully.
 
-**Delayed messages** - Proper support for delayed message delivery with correct dead-letter routing (fixes issues with standard broker).
-
 ## Installation
 
 ```bash
@@ -47,6 +45,7 @@ process_task.send(42)
 - Built-in consumer healthchecks
 - Message acknowledgment tracking (`Message.acknowledged`)
 - No Pika dependency (cleaner logs)
+- **Memory protection for delayed messages** - Configure `max_delay_time` to prevent RabbitMQ memory exhaustion from long-lived delayed messages
 
 ## When To Use This
 

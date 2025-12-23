@@ -171,16 +171,7 @@ This ensures messages survive RabbitMQ restart.
 
 ## Confirm Delivery
 
-Broker waits for RabbitMQ to confirm message receipt:
-
-```python
-broker = ConnectionPooledKombuBroker(
-    kombu_connection_options={"hostname": "amqp://..."},
-    confirm_delivery=True,  # Default: True
-)
-```
-
-When enabled, publishing blocks until RabbitMQ confirms.
+See [Delivery Guarantees](delivery-guarantees.md) for how to configure message delivery confirmation.
 
 ## Message Routing
 

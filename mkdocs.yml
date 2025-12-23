@@ -61,8 +61,8 @@ nav:
       - Examples: examples.md
   - Advanced:
       - Migration Guide: migration.md
-      - Custom Topologies: custom-topologies.md
       - Performance Tuning: performance.md
+      - Alternatives Comparison: alternatives.md
   - Reference:
       - API Reference: api-reference.md
       - Troubleshooting: troubleshooting.md

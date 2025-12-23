@@ -115,7 +115,7 @@ from dramatiq_kombu_broker import DLXRoutingTopology
 import datetime as dt
 
 topology = DLXRoutingTopology(
-    delay_queue_ttl=dt.timedelta(hours=24),
+    max_delay_time=dt.timedelta(hours=24),
     dead_letter_message_ttl=None,
     # ... plus all DefaultDramatiqTopology parameters
 )
@@ -279,4 +279,4 @@ DRAMATIQ_BROKER = {
 
 - [Examples](examples.md) - See API usage examples
 - [Configuration](configuration.md) - Detailed configuration guide
-- [Custom Topologies](custom-topologies.md) - Build custom topologies
+- [Topologies](topologies.md) - Queue topology configuration
