@@ -1,10 +1,17 @@
-import dramatiq
+from collections.abc import Generator
+from typing import Any, TypeVar
+
 import pytest
 from dramatiq import Worker
-from dramatiq_kombu_broker import ConnectionPooledKombuBroker, ConnectionSharedKombuBroker
-from dramatiq_kombu_broker.testing import (
-    ensure_consumer_connection_rabbitmq,
+from dramatiq_kombu_broker import (
+    ConnectionPooledKombuBroker,
+    ConnectionSharedKombuBroker,
+    KombuBroker,
+    RabbitMQTopology,
 )
+from dramatiq_kombu_broker.testing import create_pytest_kombu_broker
+
+T = TypeVar("T")
 
 
 @pytest.fixture(params=[None])
@@ -43,6 +50,12 @@ def kombu_broker_cls(request):
     raise NotImplementedError(request.param)
 
 
+@pytest.fixture(params=[None])
+def kombu_broker_topology(request) -> RabbitMQTopology | None:
+    assert request.param is None or isinstance(request.param, RabbitMQTopology)
+    return request.param
+
+
 @pytest.fixture
 def kombu_broker(
     rabbitmq_dsn,
@@ -51,22 +64,20 @@ def kombu_broker(
     kombu_max_priority,
     kombu_broker_cls,
     kombu_broker_connection_holder_options,
-):
-    broker = kombu_broker_cls(
-        kombu_connection_options={"hostname": rabbitmq_dsn},
-        max_declare_attempts=kombu_max_declare_attempts,
-        max_enqueue_attempts=kombu_max_enqueue_attempts,
-        max_priority=kombu_max_priority,
-        connection_holder_options=kombu_broker_connection_holder_options,
+    kombu_broker_topology,
+) -> Generator[KombuBroker, Any, None]:
+    pytest_broker = create_pytest_kombu_broker(
+        rabbitmq_dsn,
+        kombu_broker_cls,
+        kombu_max_declare_attempts=kombu_max_declare_attempts,
+        kombu_max_enqueue_attempts=kombu_max_enqueue_attempts,
+        kombu_max_priority=kombu_max_priority,
+        kombu_broker_connection_holder_options=kombu_broker_connection_holder_options,
+        kombu_broker_topology=kombu_broker_topology,
     )
-    ensure_consumer_connection_rabbitmq(broker)
-    broker.emit_after("process_boot")
-    dramatiq.set_broker(broker)
 
-    broker.delete_queue(broker._default_queue_name)  # cleanup after process kill
-    yield broker
-    broker.delete_all(include_pending=True)
-    broker.close()
+    with pytest_broker:
+        yield pytest_broker.broker
 
 
 @pytest.fixture

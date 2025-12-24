@@ -17,9 +17,10 @@ from dramatiq.common import current_millis
 
 from .connection_holder import ConnectionHolder
 from .consumer import DramatiqConsumer, ThreadSafeDramatiqConsumer
+from .exceptions import DelayTooLongError
 from .pooled_connection_holder import PooledConnectionHolder
 from .shared_connection_holder import SharedConnectionHolder
-from .topology import DefaultDramatiqTopology
+from .topology import DefaultDramatiqTopology, RabbitMQTopology
 
 DEFAULT_QUEUE_NAME = "default"
 
@@ -65,6 +66,7 @@ class KombuBroker(Broker):
 
     connection_holder_cls: type[ConnectionHolder] | None = None
     connection_holder: ConnectionHolder
+    topology: RabbitMQTopology
 
     def __init__(
         self,
@@ -79,6 +81,8 @@ class KombuBroker(Broker):
         max_enqueue_attempts: int | None = None,
         max_declare_attempts: int | None = None,
         max_producer_acquire_timeout: float | None = 10,
+        confirm_timeout: float | None = 5.0,
+        topology: RabbitMQTopology | None = None,
     ):
         super().__init__(
             middleware=middleware,
@@ -89,6 +93,9 @@ class KombuBroker(Broker):
 
         client_properties = transport_options.setdefault("client_properties", {})
         client_properties.setdefault("connection_name", socket.gethostname())
+
+        # Set heartbeat to detect dead connections
+        kombu_connection_options.setdefault("heartbeat", 60)
 
         if self.connection_holder_cls is None:
             raise TypeError("connection_holder_cls can not be None")
@@ -106,13 +113,23 @@ class KombuBroker(Broker):
         self._max_declare_attempts = max_declare_attempts
         self._max_enqueue_attempts = max_enqueue_attempts
         self._max_producer_acquire_timeout = max_producer_acquire_timeout
+        self._confirm_timeout = confirm_timeout
 
         self._default_queue_name = default_queue_name
         self._blocking_acknowledge = blocking_acknowledge
 
-        self.topology = DefaultDramatiqTopology(max_priority=max_priority)
+        # Use provided topology or create default with max_priority
+        if topology is None:
+            self.topology = DefaultDramatiqTopology(max_priority=max_priority)
+        else:
+            self.topology = topology
+
         self.queues_pending: set[str] = set()
         self.queues: set[str] = set()  # should contain only canonical names
+
+        # Callbacks for lifecycle events (useful for testing)
+        self._on_consume_started_callbacks: list[tp.Callable[[str], None]] = []
+        self._on_close_callbacks: list[tp.Callable[[], None]] = []
 
     def _create_connection_holder(
         self, connection: kombu.Connection, options: dict[str, tp.Any]
@@ -120,8 +137,28 @@ class KombuBroker(Broker):
         assert self.connection_holder_cls is not None
         return self.connection_holder_cls(connection, **options)
 
+    def on_consume_started(self, callback: tp.Callable[[str], None]) -> None:
+        """Register callback to be called when consume() creates a consumer.
+
+        Args:
+            callback: Function that receives queue_name as argument.
+        """
+        self._on_consume_started_callbacks.append(callback)
+
+    def on_close(self, callback: tp.Callable[[], None]) -> None:
+        """Register callback to be called when broker closes.
+
+        Args:
+            callback: Function with no arguments.
+        """
+        self._on_close_callbacks.append(callback)
+
     def close(self):
-        self.connection_holder.close()
+        try:
+            self.connection_holder.close()
+        finally:
+            for callback in self._on_close_callbacks:
+                callback()
 
     def declare_actor(self, actor: dramatiq.Actor):
         if actor.queue_name == "default" and actor.queue_name != self._default_queue_name:
@@ -305,6 +342,18 @@ class KombuBroker(Broker):
         self.declare_queue(queue_name, ensure=True)
 
         if delay is not None:
+            # Validate delay against topology max_delay_time (fail-fast)
+            if self.topology.max_delay_time is not None:
+                max_delay_ms = int(self.topology.max_delay_time.total_seconds() * 1000)
+                if delay > max_delay_ms:
+                    raise DelayTooLongError(
+                        f"Message delay {delay}ms exceeds max_delay_time "
+                        f"{max_delay_ms}ms configured in topology for queue '{queue_name}'",
+                        delay=delay,
+                        max_delay=max_delay_ms,
+                        queue_name=queue_name,
+                    )
+
             queue_name = self.topology.get_delay_queue_name(queue_name)
             message_eta = current_millis() + delay
             message = message.copy(
@@ -318,7 +367,7 @@ class KombuBroker(Broker):
         self.emit_before("enqueue", message, delay)
 
         try:
-            self._enqueue_message(queue_name, message)
+            self._enqueue_message(queue_name, message, delay=delay)
         except amqp.exceptions.ChannelError as exc:
             if exc.reply_code != 312:  # 312 - no-route
                 raise
@@ -327,30 +376,46 @@ class KombuBroker(Broker):
                 self.queues.discard(self.topology.get_canonical_queue_name(queue_name))
                 self.declare_queue(queue_name, ensure=True)
 
-            self._enqueue_message(queue_name, message)
+            self._enqueue_message(queue_name, message, delay=delay)
 
         self.emit_after("enqueue", message, delay)
         return message
 
-    def _enqueue_message(self, queue_name, message):
+    def _enqueue_message(self, queue_name, message, *, delay=None):
+        publish_kwargs = {
+            "exchange": "",
+            "routing_key": queue_name,
+            "body": message.encode(),
+            "delivery_mode": 2,
+            "priority": message.options.get("broker_priority"),
+            "retry": True,
+            "retry_policy": {
+                "max_retries": self._max_enqueue_attempts,
+                "errback": self.on_connection_error_errback,
+            },
+            # will raise amqp.exceptions.ChannelError(312, ...) when route not found (e.g.: queue not exists)
+            "mandatory": True,
+            # Timeout for waiting publish confirmation from RabbitMQ.
+            # Prevents deadlock when connection dies during confirm wait.
+            "confirm_timeout": self._confirm_timeout,
+        }
+
+        # Set per-message TTL for delayed messages
+        # Note: RabbitMQ per-message TTL has ordering limitations - messages expire
+        # only when they reach the head of the queue. This means a message with
+        # longer TTL can block messages with shorter TTL behind it.
+        if delay is not None:
+            # Convert delay (milliseconds) to TTL (seconds) for RabbitMQ expiration.
+            # When message TTL expires in delay queue, RabbitMQ DLX automatically
+            # routes it to the canonical queue for processing.
+            message_ttl_seconds = delay / 1000.0
+            publish_kwargs["expiration"] = message_ttl_seconds
+
         with self.connection_holder.acquire_producer(
             block=True,
             timeout=self._max_producer_acquire_timeout,
         ) as producer:
-            return producer.publish(
-                exchange="",
-                routing_key=queue_name,
-                body=message.encode(),
-                delivery_mode=2,
-                priority=message.options.get("broker_priority"),
-                retry=True,
-                retry_policy={
-                    "max_retries": self._max_enqueue_attempts,
-                    "errback": self.on_connection_error_errback,
-                },
-                # will raise amqp.exceptions.ChannelError(312, ...) when route not found (e.g.: queue not exists)
-                mandatory=True,
-            )
+            return producer.publish(**publish_kwargs)
 
     def get_declared_queues(self):
         """Get all declared queues.
@@ -401,7 +466,9 @@ class KombuBroker(Broker):
         if include_pending:
             queues |= self.queues_pending
 
-        for queue_name in queues:
+        uniq_names = set(self.topology.get_canonical_queue_name(qname) for qname in queues)
+
+        for queue_name in uniq_names:
             self.delete_queue(queue_name)
 
     def consume(self, queue_name, prefetch=1, timeout=5000):
@@ -425,6 +492,8 @@ class KombuBroker(Broker):
             with self._declare_lock:
                 self.queues_pending.discard(queue_name)
 
+        for callback in self._on_consume_started_callbacks:
+            callback(queue_name)
         return consumer
 
 

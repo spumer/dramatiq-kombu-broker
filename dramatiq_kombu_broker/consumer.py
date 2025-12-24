@@ -267,7 +267,7 @@ class DramatiqConsumer(BaseConsumer):
             )
             if message is None:
                 conn = self.channel.connection
-                if conn is not None:
+                if conn is not None and conn.client is not None:
                     conn.client.heartbeat_check()
                 return None
         except self._conn_errors as exc:

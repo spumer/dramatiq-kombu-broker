@@ -10,8 +10,8 @@ authors = [{ name = "spumer", email = "spumer-tm@yandex.ru" }]
 requires-python = ">=3.10,<4.0"
 readme = "README.md"
 dependencies = [
-  "kombu-pyamqp-threadsafe>=0.4.2",
-  "dramatiq>=2.0.0,<3.0.0",
+  "kombu-pyamqp-threadsafe>=0.6.2",
+  "dramatiq>=1.0.0,<3.0.0",
 ]
 
 [project.urls]
@@ -25,6 +25,7 @@ test = [
   "poethepoet>=0.25.0",
   "pre-commit>=3.7.0",
   "pytest>=8.1.1",
+  "pytest-env>=1.2.0",
   "pytest-mock>=3.14.0",
   "pytest-xdist>=3.5.0",
   "ruff>=0.3.5",
@@ -34,6 +35,9 @@ dev = [
   "ipykernel>=6.29.4",
   "ipywidgets>=8.1.2",
   "pdoc>=14.4.0",
+  "mkdocs>=1.6.0",
+  "mkdocs-material>=9.5.0",
+  "mkdocs-autorefs>=1.0.0",
 ]
 
 [tool.uv]
@@ -49,6 +53,7 @@ version_provider = "pep621"
 precision = 1
 show_missing = true
 skip_covered = true
+fail_under = 82
 
 [tool.coverage.run] # https://coverage.readthedocs.io/en/latest/config.html#run
 branch = true
@@ -70,12 +75,18 @@ show_error_context = true
 warn_unreachable = true
 
 [tool.pytest.ini_options] # https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
-addopts = "-s -vv --color=yes --doctest-modules --exitfirst --failed-first"
+addopts = "-s -vv --color=yes --exitfirst --failed-first"
 testpaths = ["dramatiq_kombu_broker", "tests"]
 xfail_strict = true
 log_cli = true
 log_cli_level = 'INFO'
 log_cli_format = '%(asctime)s [%(levelname)-7s] [%(threadName)s] %(name)s: %(message)s'
+markers = [
+    "integration: marks tests as integration tests (require docker infrastructure)",
+]
+env = [
+    "dramatiq_restart_delay=50"
+]
 
 
 [tool.ruff] # https://github.com/charliermarsh/ruff

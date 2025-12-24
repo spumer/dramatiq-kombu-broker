@@ -18,7 +18,7 @@ def test_enqueue__missing_queue__redeclare(
     enqueue_exception = None
     _enqueue_message_orig = kombu_broker._enqueue_message
 
-    def _no_route_enqueue_message(queue_name, message):
+    def _no_route_enqueue_message(queue_name, message, *, delay=None):
         nonlocal enqueue_exception
         nonlocal _enqueue_message_mock
 
@@ -32,7 +32,7 @@ def test_enqueue__missing_queue__redeclare(
             channel.queue_delete(queue_name, if_unused=False, if_empty=False)
 
         try:
-            return _enqueue_message_orig(queue_name, message)
+            return _enqueue_message_orig(queue_name, message, delay=delay)
         except Exception as exc:
             enqueue_exception = exc
             raise

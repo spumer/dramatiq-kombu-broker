@@ -6,12 +6,18 @@ from .broker import (
     KombuTransportOptions,
 )
 from .consumer import MessageProxy
+from .exceptions import DelayTooLongError
+from .topology import DefaultDramatiqTopology, DLXRoutingTopology, RabbitMQTopology
 
 __all__ = [
-    "MessageProxy",
-    "KombuBroker",
     "ConnectionPooledKombuBroker",
     "ConnectionSharedKombuBroker",
-    "KombuTransportOptions",
+    "DLXRoutingTopology",
+    "DefaultDramatiqTopology",
+    "DelayTooLongError",
+    "KombuBroker",
     "KombuConnectionOptions",
+    "KombuTransportOptions",
+    "MessageProxy",
+    "RabbitMQTopology",
 ]
