@@ -1,0 +1,46 @@
+# Docker Compose for testing with Toxiproxy
+#
+# Services:
+#   rabbitmq    - RabbitMQ server (internal, not exposed directly for AMQP)
+#   toxiproxy   - Toxiproxy server for fault injection
+#
+# Ports:
+#   35672 - AMQP via Toxiproxy (use this in tests)
+#   8474  - Toxiproxy HTTP API
+#   15672 - RabbitMQ Management UI (direct)
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   pytest tests/integration/ -v -s
+#   docker compose -f docker-compose.test.yml down
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      # Management UI only - AMQP goes through toxiproxy
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    hostname: toxiproxy
+    ports:
+      # Toxiproxy HTTP API
+      - "8474:8474"
+      # AMQP proxy (rabbitmq:5672 behind toxiproxy)
+      - "35672:35672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    # Proxy will be created via Python client in tests
+    # Use default entrypoint (toxiproxy-server)
