@@ -162,7 +162,7 @@ from dramatiq_kombu_broker import ConnectionPooledKombuBroker
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
         "hostname": "amqp://guest:guest@localhost:5672/",
-        "heartbeat": 60,
+        # heartbeat=60 is set by default, no need to specify
         "ssl": False,
     },
     connection_holder_options={
@@ -192,7 +192,7 @@ broker = ConnectionSharedKombuBroker(
 
 ### Custom Queue Name
 
-Change the default queue from "default" to something else:
+Change the default queue from "default" to something else without modifying actor code:
 
 ```python
 broker = ConnectionPooledKombuBroker(
@@ -200,10 +200,18 @@ broker = ConnectionPooledKombuBroker(
     default_queue_name="myapp",  # Instead of "default"
 )
 
-@dramatiq.actor(queue_name="myapp")  # Explicit queue
+# This actor will use "myapp" queue (replacement happens automatically)
+@dramatiq.actor
 def my_task():
     pass
+
+# This actor keeps its explicit queue "critical" (no replacement)
+@dramatiq.actor(queue_name="critical")
+def urgent_task():
+    pass
 ```
+
+See [Configuration](configuration.md#default_queue_name) for detailed explanation.
 
 ## Message Delays
 

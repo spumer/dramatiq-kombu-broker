@@ -41,11 +41,12 @@ process_task.send(42)
 ## Other Features
 
 - Hostname automatically added to connection properties (visible in RabbitMQ management UI)
-- Change default queue name without modifying all actors
+- [Change default queue name](configuration.md#default_queue_name) without modifying all actors
 - Built-in consumer healthchecks
 - Message acknowledgment tracking (`Message.acknowledged`)
 - No Pika dependency (cleaner logs)
 - **Memory protection for delayed messages** - Configure `max_delay_time` to prevent RabbitMQ memory exhaustion from long-lived delayed messages
+- **Deadlock protection** - `confirm_timeout` prevents infinite blocking when connection fails during publish confirmation
 
 ## When To Use This
 

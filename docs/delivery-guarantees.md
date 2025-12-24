@@ -7,6 +7,7 @@ When you send a task with `task.send()`, dramatiq-kombu-broker provides two para
 | Parameter | Default | Stage | What It Does |
 |-----------|---------|-------|--------------|
 | `confirm_delivery` | `True` | Publishing | RabbitMQ confirms message reached queue |
+| `confirm_timeout` | `5.0` | Publishing | Timeout for publish confirmation (deadlock protection) |
 | `blocking_acknowledge` | `True` | Processing | Worker waits for ACK confirmation |
 | `mandatory` | `True` | Publishing | Reject if queue doesn't exist |
 
@@ -21,6 +22,7 @@ broker = ConnectionPooledKombuBroker(
         },
     },
     confirm_delivery=True,         # Ensure delivery
+    confirm_timeout=5.0,           # Prevent deadlocks (default)
     blocking_acknowledge=True,     # Ensure processing
 )
 ```
@@ -77,6 +79,77 @@ broker = ConnectionPooledKombuBroker(
 - Messages lost on network issues
 - Messages lost on RabbitMQ restart
 - No error notification
+
+### confirm_timeout: Deadlock Protection
+
+**Default:** `5.0` seconds
+
+When `confirm_delivery=True`, the broker waits for RabbitMQ to confirm message receipt. If the connection drops during this wait, the thread can block indefinitely - a **deadlock**. The `confirm_timeout` parameter prevents this.
+
+**The Problem:**
+
+```
+1. Publisher sends message to RabbitMQ
+2. Publisher waits for confirmation...
+3. Connection drops (network issue, RabbitMQ restart, etc.)
+4. Without timeout: Publisher waits FOREVER
+5. Worker thread is stuck, cannot process other work
+```
+
+**The Solution:**
+
+```python
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={...},
+    confirm_delivery=True,
+    confirm_timeout=5.0,  # Default: 5 seconds
+)
+```
+
+After 5 seconds without confirmation, the broker raises an exception instead of blocking forever.
+
+**How it works with heartbeat:**
+
+Both `confirm_timeout` and `heartbeat` protect against connection issues, but at different levels:
+
+| Parameter | Level | Protects Against |
+|-----------|-------|------------------|
+| `heartbeat=60` | Transport | Dead connections (no activity for 60s) |
+| `confirm_timeout=5.0` | Application | Blocked publish confirmation |
+
+They are **complementary**:
+- `heartbeat` detects dead connections during idle periods
+- `confirm_timeout` prevents blocking during active publishing
+
+**Configuration examples:**
+
+```python
+# Production (recommended)
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={
+        "hostname": "amqp://user:pass@rabbitmq:5672/",
+        "heartbeat": 60,  # Detect dead connections
+    },
+    confirm_delivery=True,
+    confirm_timeout=5.0,  # Prevent publish deadlocks
+)
+
+# High-latency network
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={
+        "hostname": "amqp://user:pass@remote-rabbitmq:5672/",
+        "heartbeat": 60,
+    },
+    confirm_delivery=True,
+    confirm_timeout=30.0,  # More time for slow confirmations
+)
+```
+
+**When timeout triggers:**
+
+If `confirm_timeout` expires, an exception is raised. This is the expected behavior - it's better to fail fast than hang forever. The message should be retried by the calling code.
+
+**See [Troubleshooting](troubleshooting.md#publish-deadlocks) if you experience timeout issues.**
 
 ## blocking_acknowledge: Processing Guarantees
 

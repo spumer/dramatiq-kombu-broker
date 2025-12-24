@@ -86,6 +86,40 @@ def slow_task(data):
 # dramatiq tasks --queues background
 ```
 
+## Custom Default Queue Name
+
+Replace the default queue name for all actors without changing their code:
+
+```python
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={"hostname": "amqp://..."},
+    default_queue_name="myapp",  # Replace "default" with "myapp"
+)
+dramatiq.set_broker(broker)
+
+# This actor will use "myapp" queue (automatically replaced from "default")
+@dramatiq.actor
+def send_email(to: str, subject: str):
+    print(f"Sending email to {to}")
+
+# This actor keeps its explicit "notifications" queue (no replacement)
+@dramatiq.actor(queue_name="notifications")
+def send_push_notification(user_id: int, message: str):
+    print(f"Push to user {user_id}: {message}")
+
+# Usage
+send_email.send("user@example.com", "Welcome!")  # Goes to "myapp" queue
+send_push_notification.send(123, "Hello!")       # Goes to "notifications" queue
+```
+
+**When to use:**
+
+- Namespace queues by application name in shared RabbitMQ
+- Migrate from another broker that used different queue naming
+- Run multiple environments (dev, staging, prod) on same RabbitMQ
+
+See [Configuration](configuration.md#default_queue_name) for detailed explanation.
+
 ## Retries and Error Handling
 
 ```python
@@ -252,7 +286,7 @@ from dramatiq_kombu_broker import ConnectionPooledKombuBroker
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
         "hostname": os.environ["RABBITMQ_URL"],
-        "heartbeat": 60,
+        "heartbeat": 60,  # Default value, shown explicitly for documentation
         "ssl": True,
         "ssl_options": {
             "ca_certs": "/etc/ssl/certs/ca.pem",

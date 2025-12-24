@@ -94,6 +94,9 @@ class KombuBroker(Broker):
         client_properties = transport_options.setdefault("client_properties", {})
         client_properties.setdefault("connection_name", socket.gethostname())
 
+        # Set heartbeat to detect dead connections
+        kombu_connection_options.setdefault("heartbeat", 60)
+
         if self.connection_holder_cls is None:
             raise TypeError("connection_holder_cls can not be None")
 
@@ -124,14 +127,38 @@ class KombuBroker(Broker):
         self.queues_pending: set[str] = set()
         self.queues: set[str] = set()  # should contain only canonical names
 
+        # Callbacks for lifecycle events (useful for testing)
+        self._on_consume_started_callbacks: list[tp.Callable[[str], None]] = []
+        self._on_close_callbacks: list[tp.Callable[[], None]] = []
+
     def _create_connection_holder(
         self, connection: kombu.Connection, options: dict[str, tp.Any]
     ) -> ConnectionHolder:
         assert self.connection_holder_cls is not None
         return self.connection_holder_cls(connection, **options)
 
+    def on_consume_started(self, callback: tp.Callable[[str], None]) -> None:
+        """Register callback to be called when consume() creates a consumer.
+
+        Args:
+            callback: Function that receives queue_name as argument.
+        """
+        self._on_consume_started_callbacks.append(callback)
+
+    def on_close(self, callback: tp.Callable[[], None]) -> None:
+        """Register callback to be called when broker closes.
+
+        Args:
+            callback: Function with no arguments.
+        """
+        self._on_close_callbacks.append(callback)
+
     def close(self):
-        self.connection_holder.close()
+        try:
+            self.connection_holder.close()
+        finally:
+            for callback in self._on_close_callbacks:
+                callback()
 
     def declare_actor(self, actor: dramatiq.Actor):
         if actor.queue_name == "default" and actor.queue_name != self._default_queue_name:
@@ -465,6 +492,8 @@ class KombuBroker(Broker):
             with self._declare_lock:
                 self.queues_pending.discard(queue_name)
 
+        for callback in self._on_consume_started_callbacks:
+            callback(queue_name)
         return consumer
 
 

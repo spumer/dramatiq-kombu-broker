@@ -81,6 +81,9 @@ xfail_strict = true
 log_cli = true
 log_cli_level = 'INFO'
 log_cli_format = '%(asctime)s [%(levelname)-7s] [%(threadName)s] %(name)s: %(message)s'
+markers = [
+    "integration: marks tests as integration tests (require docker infrastructure)",
+]
 env = [
     "dramatiq_restart_delay=50"
 ]

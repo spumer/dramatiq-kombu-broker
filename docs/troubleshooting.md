@@ -60,15 +60,60 @@ connection_max = 1000
 
 **Error:** Connection drops unexpectedly
 
-**Fix:**
+By default, heartbeat is set to 60 seconds. To reduce it for unreliable networks:
+
 ```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
         "hostname": "amqp://...",
-        "heartbeat": 30,  # Lower value (default: 60)
+        "heartbeat": 30,  # Lower than default 60s
     }
 )
 ```
+
+### Publish Deadlocks
+
+**Symptoms:**
+- Worker threads hang indefinitely
+- Message publishing never completes
+- Application becomes unresponsive during RabbitMQ issues
+
+**Cause:** When `confirm_delivery=True`, the broker waits for RabbitMQ to confirm message receipt. If the connection drops during this wait (before heartbeat detects it), the thread can block forever.
+
+**Solution:** Use `confirm_timeout` (enabled by default):
+
+```python
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={
+        "hostname": "amqp://...",
+        "heartbeat": 60,  # Transport-level protection
+    },
+    confirm_delivery=True,
+    confirm_timeout=5.0,  # Application-level protection (default)
+)
+```
+
+**If you're getting timeout errors:**
+
+1. **Check network latency** - High-latency networks may need longer timeout:
+   ```python
+   confirm_timeout=30.0  # For slow networks
+   ```
+
+2. **Check RabbitMQ load** - Overloaded RabbitMQ may delay confirmations. Monitor RabbitMQ metrics.
+
+3. **Check connection stability** - Frequent timeouts indicate connection issues. Investigate network or RabbitMQ health.
+
+**Relationship with heartbeat:**
+
+| Parameter | Purpose | When It Helps |
+|-----------|---------|---------------|
+| `heartbeat=60` | Detects dead connections | Idle connections, no activity |
+| `confirm_timeout=5.0` | Prevents publish blocking | Active publishing, connection drops mid-publish |
+
+Both parameters work together to provide comprehensive connection protection.
+
+**See [Delivery Guarantees](delivery-guarantees.md#confirm_timeout-deadlock-protection) for more details.**
 
 ## Queue Issues
 
@@ -367,6 +412,7 @@ When asking for help, include:
 |-------|-----------|
 | Connection refused | Check RabbitMQ is running |
 | Connection limit | Use ConnectionSharedKombuBroker |
+| Publish deadlock | Use `confirm_timeout=5.0` (default) |
 | Precondition failed | Delete queue, let it recreate |
 | Delays not working | Delete .DQ queue, use DefaultDramatiqTopology |
 | High memory | Reduce worker threads |

@@ -23,13 +23,15 @@ See [Configuration - Broker Types](configuration.md#broker-types) for detailed p
 
 ## Heartbeats
 
-Keep connections alive with heartbeats:
+Heartbeats keep connections alive and detect dead connections. By default, heartbeat is set to **60 seconds** - no configuration needed for most use cases.
+
+To override the default heartbeat interval:
 
 ```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
         "hostname": "amqp://...",
-        "heartbeat": 60,  # Send heartbeat every 60 seconds
+        "heartbeat": 30,  # Override: reduce for unreliable networks
     },
 )
 ```
@@ -181,7 +183,7 @@ Usually topology mismatches. See [Topologies](topologies.md).
 
 1. **Use connection pooling** for multi-process workers
 2. **Use shared connection** for threaded apps
-3. **Set heartbeats** to detect dead connections
+3. **Heartbeats enabled by default** (60s) - adjust if needed for your network
 4. **Configure retries** for reliability
 5. **Monitor connection count** in RabbitMQ UI
 6. **Use SSL** in production

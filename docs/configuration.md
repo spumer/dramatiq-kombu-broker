@@ -71,7 +71,7 @@ kombu_connection_options = {
     },
 
     # Timeouts
-    "heartbeat": 60,  # Heartbeat interval in seconds
+    "heartbeat": 60,  # Heartbeat interval in seconds (default: 60)
     "connect_timeout": 10,  # Connection timeout
 
     # Transport options
@@ -116,6 +116,46 @@ broker = ConnectionPooledKombuBroker(
     default_queue_name="myapp",  # Instead of "default"
 )
 ```
+
+**How it works:**
+
+When an actor is declared, the broker checks if its `queue_name` equals `"default"`. If so, it automatically replaces it with the configured `default_queue_name`. This happens at actor declaration time, so no code changes are needed in your actors.
+
+**When replacement happens:**
+
+| Actor Definition | default_queue_name | Resulting Queue |
+|-----------------|-------------------|-----------------|
+| `@dramatiq.actor` | `"myapp"` | `"myapp"` |
+| `@dramatiq.actor(queue_name="default")` | `"myapp"` | `"myapp"` |
+| `@dramatiq.actor(queue_name="critical")` | `"myapp"` | `"critical"` |
+
+**Example:**
+
+```python
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={...},
+    default_queue_name="myapp",
+)
+dramatiq.set_broker(broker)
+
+# This actor uses "default" queue by default
+# It will be automatically changed to "myapp"
+@dramatiq.actor
+def send_email(to: str, subject: str):
+    pass
+
+# This actor explicitly uses "critical" queue
+# It will NOT be changed (keeps "critical")
+@dramatiq.actor(queue_name="critical")
+def urgent_notification(message: str):
+    pass
+```
+
+**Use cases:**
+
+- **Migration**: Replace queue names when migrating from another broker without touching actor code
+- **Multi-tenant**: Run separate instances with different queue prefixes
+- **Namespacing**: Prefix queues with application name to avoid conflicts in shared RabbitMQ
 
 ### blocking_acknowledge
 
@@ -198,6 +238,43 @@ broker = ConnectionPooledKombuBroker(
 )
 ```
 
+### confirm_timeout
+
+Timeout for waiting RabbitMQ publish confirmation (default: `5.0` seconds):
+
+```python
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={...},
+    confirm_timeout=5.0,  # Default: 5 seconds
+)
+```
+
+When `confirm_delivery=True`, the broker waits for RabbitMQ to confirm that the message was received. Without a timeout, this wait can block indefinitely if the connection drops during publishing, causing a **deadlock**.
+
+**Why this matters:**
+
+- Prevents worker threads from hanging forever on connection failures
+- Works in conjunction with `heartbeat=60` (different protection levels)
+- `heartbeat` detects dead connections at the transport level
+- `confirm_timeout` prevents blocking at the application level during publish
+
+**Recommended values:**
+
+| Scenario | confirm_timeout | Notes |
+|----------|-----------------|-------|
+| Production (default) | `5.0` | Good balance of safety and responsiveness |
+| High-latency networks | `10.0` - `30.0` | Allow more time for slow confirmations |
+| Local development | `5.0` | Default is usually sufficient |
+| Disable timeout | `None` | **Not recommended** - can cause deadlocks |
+
+**Relationship with other parameters:**
+
+- `confirm_delivery=True` - Required for `confirm_timeout` to have effect
+- `heartbeat=60` - Detects dead connections (complementary protection)
+- `max_producer_acquire_timeout` - Timeout for getting producer from pool (different stage)
+
+**See [Delivery Guarantees](delivery-guarantees.md#confirm_timeout-deadlock-protection) for detailed explanation.**
+
 ### topology
 
 Custom topology for queue routing (see [Topologies](topologies.md)):
@@ -264,6 +341,7 @@ broker = ConnectionPooledKombuBroker(
     default_queue_name="myapp",
     max_priority=10,
     confirm_delivery=True,
+    confirm_timeout=5.0,  # Deadlock protection
     blocking_acknowledge=True,
     max_enqueue_attempts=3,
     max_declare_attempts=5,
@@ -345,7 +423,8 @@ def broker():
 
 - ✅ Use SSL/TLS for production connections
 - ✅ Enable `confirm_delivery` for reliability
-- ✅ Set appropriate `heartbeat` (60 seconds recommended)
+- ✅ Set `confirm_timeout` for deadlock protection (default: 5.0s is usually sufficient)
+- ✅ Heartbeat set to 60s by default - adjust for unreliable networks if needed
 - ✅ Configure connection pooling based on workload
 - ✅ Set `max_priority` if using priority queues
 - ✅ Use separate vhosts for different environments

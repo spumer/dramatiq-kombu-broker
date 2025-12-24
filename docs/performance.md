@@ -149,11 +149,13 @@ topology = DefaultDramatiqTopology(
 
 ### Heartbeat
 
+Heartbeat is set to **60 seconds by default**. Adjust only if needed:
+
 ```python
 broker = ConnectionPooledKombuBroker(
     kombu_connection_options={
         "hostname": "amqp://...",
-        "heartbeat": 60,  # Seconds between heartbeats
+        "heartbeat": 30,  # Override default (60s) for unstable networks
     },
 )
 ```

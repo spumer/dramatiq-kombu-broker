@@ -20,6 +20,7 @@ broker = ConnectionPooledKombuBroker(
     max_enqueue_attempts=None,
     max_declare_attempts=None,
     max_producer_acquire_timeout=10.0,
+    confirm_timeout=5.0,
     topology=None,
 )
 ```
@@ -35,6 +36,7 @@ broker = ConnectionPooledKombuBroker(
 - `max_enqueue_attempts` - Retry count for enqueue operations
 - `max_declare_attempts` - Retry count for queue declarations
 - `max_producer_acquire_timeout` - Timeout for acquiring producer (seconds)
+- `confirm_timeout` - Timeout for RabbitMQ publish confirmation (default: `5.0` seconds)
 - `topology` - Custom topology instance
 
 ### ConnectionSharedKombuBroker
@@ -68,7 +70,7 @@ kombu_connection_options = {
     },
 
     # Timeouts
-    "heartbeat": 60,
+    "heartbeat": 60,  # Default value
     "connect_timeout": 10,
 
     # Transport options

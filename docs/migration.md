@@ -111,6 +111,8 @@ broker = ConnectionPooledKombuBroker(
 )
 ```
 
+> **Note:** Starting from version 0.3.0 with default heartbeat, `heartbeat=60` is set automatically. You only need to specify it if you want a different value.
+
 ### Max Priority
 
 **Standard broker:**
@@ -125,6 +127,53 @@ broker = ConnectionPooledKombuBroker(
     max_priority=10,
 )
 ```
+
+### Queue Name Migration
+
+If your old setup used a different default queue name (e.g., `"dramatiq"` instead of `"default"`), you can migrate without changing actor code:
+
+**Before (actors with explicit queue names):**
+```python
+# You had to specify queue_name on every actor
+@dramatiq.actor(queue_name="dramatiq")
+def task_one():
+    pass
+
+@dramatiq.actor(queue_name="dramatiq")
+def task_two():
+    pass
+```
+
+**After (using default_queue_name):**
+```python
+broker = ConnectionPooledKombuBroker(
+    kombu_connection_options={"hostname": "..."},
+    default_queue_name="dramatiq",  # Replace "default" with "dramatiq"
+)
+dramatiq.set_broker(broker)
+
+# No need to specify queue_name anymore - it's automatic
+@dramatiq.actor
+def task_one():
+    pass
+
+@dramatiq.actor
+def task_two():
+    pass
+
+# Actors with explicit non-default queues still work as expected
+@dramatiq.actor(queue_name="critical")
+def urgent_task():
+    pass
+```
+
+This approach:
+
+- Removes boilerplate from actor definitions
+- Centralizes queue naming in broker configuration
+- Makes it easier to change queue names across all actors
+
+See [Configuration](configuration.md#default_queue_name) for detailed explanation.
 
 ## Common Issues
 
@@ -150,17 +199,6 @@ rabbitmqctl delete_queue myqueue.XQ
 
 The broker sets `ignore_different_topology=True` by default, which logs warnings but continues. This works if you're not changing queue structure.
 
-### Issue: Delayed Messages Not Working
-
-**Symptom:** Messages with delays don't get processed.
-
-**Cause:** Old delay queues missing dead-letter parameters.
-
-**Fix:** Delete delay queues (`.DQ` queues) and let broker recreate them:
-
-```bash
-rabbitmqctl delete_queue myqueue.DQ
-```
 
 ### Issue: Connection Pools
 
@@ -267,15 +305,15 @@ The queue structure is compatible, so rollback is safe.
 
 ## Feature Comparison
 
-| Feature | Standard Broker | Kombu Broker |
-|---------|----------------|--------------|
-| Connection pooling | Limited | Yes |
+| Feature | Standard Broker | Kombu Broker            |
+|---------|----------------|-------------------------|
+| Connection pooling | Limited | Yes                     |
 | Channel pooling | No | Yes (SharedKombuBroker) |
-| Topology mismatch handling | Fails | Configurable |
-| Delayed messages | Works | Works (with fix) |
-| Priority queues | Yes | Yes |
-| Middleware | Same | Same |
-| Message format | Same | Same |
+| Topology mismatch handling | Fails | Configurable            |
+| Delayed messages | Works | Works                   |
+| Priority queues | Yes | Yes                     |
+| Middleware | Same | Same                    |
+| Message format | Same | Same                    |
 
 ## Next Steps
 
