@@ -1,3 +1,26 @@
+## v0.3.0 (2025-12-24)
+
+### Feat
+
+- add default values for heartbeat and confirm_timeout, It's best practices in prod; update docs
+- add DLXRoutingTopology for alternative delay queue routing
+
+### Fix
+
+- introduce DLXRoutingTopology and make DefaultDramatiqTopology compatible with real dramatiq topology (Fixes #6)
+- use kombu.Producer instead of low-level amqp channel
+- add dead-letter parameters to delay queues (fixes #6, #7)
+- revert the version
+- is that a flaky test 🤔
+- remove poetry check
+- lets use uv in the pipeline too
+
+### Refactor
+
+- improve test_dlx_routing_topology_integration
+- address code review feedback
+- move local imports to global scope in tests
+
 ## v0.2.2 (2024-10-21)
 
 ## v0.2.1 (2024-10-03)
