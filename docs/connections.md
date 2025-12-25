@@ -60,7 +60,7 @@ broker = ConnectionPooledKombuBroker(
 
 The broker automatically adds hostname to connection properties, making it easy to identify connections in RabbitMQ management UI:
 
-![Connection hostname in RabbitMQ UI](../media/connection_hostname.png)
+![Connection hostname in RabbitMQ UI](media/connection_hostname.png)
 
 You can also set a custom connection name:
 

@@ -23,7 +23,7 @@ Dramatiq Kombu-based broker
 
 
 ### Auto-add hostname to connection props. Now you can see location of each connection in RabbitMQ web admin
-![](./media/connection_hostname.png)
+![](./docs/media/connection_hostname.png)
 
 ## Installing
 
